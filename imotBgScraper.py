@@ -2,186 +2,222 @@ import requests
 from bs4 import BeautifulSoup
 import csv
 import os.path
-import re
+from typing import List, Tuple, Dict, Optional
+from requests.adapters import HTTPAdapter
+from requests.packages.urllib3.util.retry import Retry
+import logging
+from time import sleep
 
-# Read the URLs and filenames from the inputURLS.csv file
-urls = []
-with open("inputURLS.csv", "r") as csvfile:
-    reader = csv.DictReader(csvfile)
-    for row in reader:
-        url = row["URL"]
-        filename = row["FileName"]
-        urls.append((url, filename))
-
-# Iterate over each URL and corresponding output filename
-for base_url, output_filename in urls:
-    print(f"\n--- Starting scrape for {output_filename} ---")
+def setup_logging():
+    """Setup logging with file cleanup"""
+    log_file = 'scraper.log'
+    if os.path.exists(log_file):
+        try:
+            os.remove(log_file)
+        except OSError as e:
+            print(f"Error clearing log file: {e}")
     
+    logging.basicConfig(
+        level=logging.INFO,
+        format='%(asctime)s - %(levelname)s - %(message)s',
+        filename=log_file
+    )
+
+# Add this line after the function definition (around line 25):
+setup_logging()
+
+CONFIG = {
+    'BASE_URL': 'http://imot.bg',
+    'HEADERS': ["Title", "Price", "oldValue", "Link", "RecordId"],
+    'REQUEST_DELAY': 1
+}
+
+def create_session() -> requests.Session:
+    """Create a session with retry logic"""
+    session = requests.Session()
+    retries = Retry(
+        total=3,
+        backoff_factor=1,
+        status_forcelist=[500, 502, 503, 504]
+    )
+    session.mount('http://', HTTPAdapter(max_retries=retries))
+    session.mount('https://', HTTPAdapter(max_retries=retries))
+    return session
+
+def read_input_urls(file_path: str = "inputURLS.csv") -> List[Tuple[str, str]]:
+    """Read URLs and filenames from input CSV"""
+    urls = []
+    try:
+        with open(file_path, "r") as csvfile:
+            reader = csv.DictReader(csvfile)
+            urls = [(row["URL"], row["FileName"]) for row in reader]
+        logging.info(f"Successfully read {len(urls)} URLs from {file_path}")
+        return urls
+    except Exception as e:
+        logging.error(f"Error reading input URLs: {str(e)}")
+        return []
+
+def read_reference_data(filename: str) -> Tuple[Dict[str, str], set]:
+    """Read existing data for comparison"""
     reference_data = {}
     processed_keys = set()
-    new_records = []
-    file_exists = os.path.isfile(output_filename)
-
-    # Read existing data for comparison
-    if file_exists:
-        try:
-            with open(output_filename, "r", encoding="utf-8") as csvfile:
-                reader = csv.reader(csvfile)
-                header = next(reader, None)
-                if header is not None and len(header) == 5 and header[4] == "RecordId":
-                    for row in reader:
-                        reference_key = row[4]
-                        reference_data[reference_key] = row[1]
-                        processed_keys.add(reference_key)
-        except Exception as e:
-            print(f"Warning: Could not read existing file {output_filename}. Error: {e}")
     
-    # Clean the output file and write header
-    with open(output_filename, "w", newline="", encoding="utf-8") as csvfile:
-        writer = csv.writer(csvfile)
-        writer.writerow(["Title", "Price", "oldValue", "Link", "RecordId"])
+    if not os.path.isfile(filename):
+        return reference_data, processed_keys
 
-    # Start scraping loop in append mode
-    with open(output_filename, "a", newline="", encoding="utf-8") as csvfile:
-        writer = csv.writer(csvfile)
+    try:
+        with open(filename, "r", encoding="utf-8") as csvfile:
+            reader = csv.reader(csvfile)
+            header = next(reader, None)
+            if header is not None and len(header) == 5 and header[4] == "RecordId":
+                for row in reader:
+                    reference_data[row[4]] = row[1]
+                    processed_keys.add(row[4])
+    except Exception as e:
+        logging.error(f"Error reading reference data: {str(e)}")
+
+    return reference_data, processed_keys
+
+def extract_listing_data(listing: BeautifulSoup) -> Optional[Tuple[str, str, str, str]]:
+    """Extract data from a listing"""
+    try:
+        if len(listing['class']) > 1 and listing['class'][1] == 'fakti':
+            return None
+
+        record_id_key = listing['id'][3:]
+        link_element = f"{CONFIG['BASE_URL']}/{record_id_key}"
+
+        link_tag = listing.find("a", class_="title saveSlink")
+        if not link_tag:
+            return None
+
+        full_description = link_tag.get_text(separator=' ', strip=True)
+        parts = full_description.split(' ')
+        title = parts[1] if len(parts) > 1 else ""
+
+        price_div = listing.find("div", class_=lambda x: x and x.startswith('price'))
+        if not price_div:
+            return None
+
+        price_text = extract_price(price_div)
+        if not price_text:
+            return None
+
+        return title, price_text, link_element, record_id_key
+    except Exception as e:
+        logging.error(f"Error processing listing: {e}")
+        return None
+
+def extract_price(price_div: BeautifulSoup) -> Optional[str]:
+    """Extract price information from price div"""
+    try:
+        vat_span = price_div.find('span')
+        vat_status = vat_span.text.strip() if vat_span else ""
+
+        price_data = price_div.find('div')
+        if not price_data:
+            return None
+
+        main_price = price_data.get_text('\n').split('\n')[0].strip()
+        return f"{main_price} | {vat_status}" if vat_status else main_price
+    except Exception as e:
+        logging.error(f"Error extracting price: {e}")
+        return None
+
+def process_page(session: requests.Session, url: str, page: int) -> Optional[BeautifulSoup]:
+    """Process a single page"""
+    try:
+        sleep(CONFIG['REQUEST_DELAY'])
+        page_url = url if page == 1 else f"{url.rstrip('/')}/p-{page}"
+        
+        response = session.get(page_url)
+        response.raise_for_status()
+        return BeautifulSoup(response.content, "html.parser")
+    except Exception as e:
+        logging.error(f"Error processing page {page_url}: {e}")
+        return None
+
+def write_output(filename: str, records: List[List[str]], headers: List[str]):
+    """Write records to output file"""
+    try:
+        with open(filename, "w", newline="", encoding="utf-8") as csvfile:
+            writer = csv.writer(csvfile)
+            writer.writerow(headers)
+            writer.writerows(records)
+    except Exception as e:
+        logging.error(f"Error writing to {filename}: {e}")
+
+def main():
+    session = create_session()
+    urls = read_input_urls()
+
+    for base_url, output_filename in urls:
+        logging.info(f"Processing: {output_filename}")
+        reference_data, processed_keys = read_reference_data(output_filename)
+        new_records = []
+        all_records = []
 
         page = 1
-        
-        # --- PAGINATION LOGIC: Loop until no "next" button is found ---
         while True:
-            # Construct the URL by appending the page suffix
-            if page == 1:
-                page_url = base_url
-            else:
-                # Append /p-X for subsequent pages
-                clean_base_url = base_url.rstrip('/')
-                page_url = f"{clean_base_url}/p-{page}"
-
-            print(f"Scraping page {page}: {page_url}")
-
-            try:
-                response = requests.get(page_url)
-                response.raise_for_status()
-                html_content = response.content
-            except requests.exceptions.RequestException as e:
-                print(f"Error fetching {page_url}: {e}. Stopping pagination.")
+            soup = process_page(session, base_url, page)
+            if not soup:
                 break
 
-            soup = BeautifulSoup(html_content, "html.parser")
-
-            # --- CRITICAL FIX: Find listings based on the "item" classes ---
-            # Using a function to match classes starting with 'item' (e.g., 'item ', 'item TOP ', 'item VIP ')
             listings = soup.find_all("div", class_=lambda x: x and x.startswith('item'))
-
-            if not listings and page == 1:
-                print("Warning: No listings found on page 1. Check your base URL or selectors.")
-            
             if not listings:
-                print(f"No more listings found on page {page}. Assuming this is the last page.")
-                break # Exit the while loop
+                if page == 1:
+                    logging.warning("No listings found on page 1")
+                break
 
-            # --- PROCESS LISTINGS ---
             for listing in listings:
-                if len(listing['class']) > 1 and listing['class'][1] == 'fakti':
+                result = extract_listing_data(listing)
+                if not result:
                     continue
 
-                record_id_key = listing['id'][3:]
+                title, price_text, link_element, record_id_key = result
                 
-                link_element = "http://imot.bg/"+record_id_key            
-
-                link_tag = listing.find("a", class_="title saveSlink")
-
-                # Now you can extract the text and link safely
-                if link_tag:
-                    # 1. Get the combined text (Title + Location)
-                    full_description = link_tag.get_text(separator=' ', strip=True)
-                    parts = full_description.split(' ')
-
-                    # parts ще бъде списък: ['Продава', '2-СТАЕН', 'град', 'София,', 'Горна', 'баня']
-
-                    # 2. Проверяваме дали списъкът е достатъчно дълъг и извличаме втория елемент (индекс 1).
-                    # Вторият елемент е винаги на индекс 1 в списъка.
-                    if len(parts) > 1:
-                        full_description = parts[1]
-                    
-                # 2. Extract Price
-                # Price is inside the first div within class="price "
-                price_div = listing.find("div", class_=lambda x: x and x.startswith('price'))
-                price_text = ""
-
-                vat_span = price_div.find('span')
-                vat_status = vat_span.text.strip() if vat_span else ""
-
-                if price_div:
-                    # The price text is inside the first <div> inside price_div
-                    price_data = price_div.find('div')
-                    # Get the primary price (e.g., "167 520 €") and clean it up
-                    main_price = price_data.get_text('\n').split('\n')[0].strip()
-                    
-                    # Combine the main price and the VAT status
-                    if vat_status:
-                        # Join the price and status, e.g., "167 520 € | Цената е без ДДС"
-                        price_text = f"{main_price} | {vat_status}"
-                    else:
-                        price_text = main_price
-                
-                if not price_text:
-                    continue # Skip if no price found
-
-
-                # --- Comparison Logic ---
                 if record_id_key in reference_data:
                     reference_value = reference_data[record_id_key]
                     if price_text != reference_value:
-                        new_value = reference_value
-                        new_records.append([full_description, price_text, new_value, link_element, record_id_key])
-                        print(f"Record with changed price: {record_id_key}; With price: {new_value}->{price_text}")
-                    else:
-                        new_value = ""
+                        new_records.append([title, price_text, reference_value, link_element, record_id_key])
+                        logging.info(f"Changed price: {record_id_key} from {reference_value} to {price_text}")
+                    new_value = reference_value if price_text != reference_value else ""
                     del reference_data[record_id_key]
-                    processed_keys.add(record_id_key)
                 else:
                     new_value = "new"
-                    new_records.append([full_description, price_text, new_value, link_element, record_id_key])  # Store the new record
-                    print(f"New record: {record_id_key}; With price: {price_text}")
+                    new_records.append([title, price_text, new_value, link_element, record_id_key])
+                    logging.info(f"New record: {record_id_key}")
 
-                writer.writerow([full_description, price_text, new_value, link_element, record_id_key])
-
-                
-
-            # --- CHECK FOR NEXT PAGE BUTTON ---
-            # The next page link is often in the pagination section. Let's rely on finding 
-            # a link that has the next page number/indicator to be safer than a simple div.
-            next_link = soup.find('a', class_='saveSlink next')
-            # Check for the link in the pagination area pointing to the next page
+                all_records.append([title, price_text, new_value, link_element, record_id_key])
             
-            if next_link:
-                page += 1
-            else:
+            if not soup.find('a', class_='saveSlink next'):
                 break
+            page += 1
 
-    # --- Process the remaining records (Missing items/Deleted listings) ---
-    with open(output_filename, "a", newline="", encoding="utf-8") as csvfile:
-        writer = csv.writer(csvfile)
+        # Handle remaining/deleted records
         for record_id_key, reference_value in reference_data.items():
             if record_id_key not in processed_keys:
-                writer.writerow([record_id_key, reference_value, "missing"])
-                print(f"Missing record (might be deleted): {record_id_key}; Old price: {reference_value}")
+                all_records.append([record_id_key, reference_value, "missing", "", record_id_key])
+                logging.info(f"Missing record: {record_id_key}")
 
-    # --- Create a new file for new or changed records ---
-    new_records_filename = "NewRecords_" + output_filename
-    if new_records:
-        with open(new_records_filename, "w", newline="", encoding="utf-8") as csvfile:
-            writer = csv.writer(csvfile)
-            writer.writerow(["RecordId", "Price", "oldValue"])
-            writer.writerows(new_records)
-    else:
-        try:
-            if os.path.isfile(new_records_filename):
-                os.remove(new_records_filename)
-            print(f"There are no new/changed records for: {output_filename}")
-        except OSError:
-            print(f"There are no new/changed records for: {output_filename}")
+        # Write output files
+        write_output(output_filename, all_records, CONFIG['HEADERS'])
+        
+        new_records_filename = f"NewRecords_{output_filename}"
+        if new_records:
+            write_output(new_records_filename, new_records, CONFIG['HEADERS'])
+        else:
+            try:
+                if os.path.isfile(new_records_filename):
+                    os.remove(new_records_filename)
+                logging.info(f"No new records for: {output_filename}")
+            except OSError:
+                pass
 
-print("\nScraping complete.")
-input("Press Enter to exit...")
+if __name__ == "__main__":
+    try:
+        main()
+    except Exception as e:
+        logging.error(f"Fatal error: {e}")
+    finally:
+        input("Press Enter to exit...")
