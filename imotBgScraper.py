@@ -140,7 +140,19 @@ def process_page(session: requests.Session, url: str, page: int) -> Optional[Bea
     """Process a single page"""
     try:
         sleep(CONFIG['REQUEST_DELAY'])
-        page_url = url if page == 1 else f"{url.rstrip('/')}/p-{page}"
+                
+        # Handle both old and new URL formats
+        if page == 1:
+            page_url = url
+        else:
+            # Check if URL has parameters (contains '?')
+            if '?' in url:
+                # Split URL at '?' to insert pagination before parameters
+                base_part, params = url.split('?', 1)
+                page_url = f"{base_part.rstrip('/')}/p-{page}?{params}"
+            else:
+                # No parameters, just add pagination at the end
+                page_url = f"{url.rstrip('/')}/p-{page}"
         
         response = session.get(page_url)
         response.raise_for_status()

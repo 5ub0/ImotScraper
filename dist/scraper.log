@@ -1,9 +1,437 @@
-2025-11-04 11:56:21,124 - INFO - Successfully read 4 URLs from data/inputURLS.csv
-2025-11-04 11:56:21,125 - INFO - Processing: housesGB.csv
-2025-11-04 11:56:23,923 - INFO - No new records for: housesGB.csv among 47 records
-2025-11-04 11:56:23,924 - INFO - Processing: housesDRG.csv
-2025-11-04 11:56:30,398 - INFO - No new records for: housesDRG.csv among 171 records
-2025-11-04 11:56:30,399 - INFO - Processing: housesBoqna.csv
-2025-11-04 11:56:35,606 - INFO - No new records for: housesBoqna.csv among 131 records
-2025-11-04 11:56:35,607 - INFO - Processing: housesManLiv.csv
-2025-11-04 11:56:37,064 - INFO - No new records for: housesManLiv.csv among 31 records
+2025-11-04 13:06:19,271 - INFO - Successfully read 1 URLs from data/inputURLS.csv
+2025-11-04 13:06:19,272 - INFO - Processing: housesSouthRegion.csv
+2025-11-04 13:06:20,962 - INFO - New record: \u041a\u042a\u0429\u0410 with price: 420 000 € | \u0426\u0435\u043d\u0430\u0442\u0430 \u0435 \u0431\u0435\u0437 \u0414\u0414\u0421 - http://imot.bg/1j176191505152191
+2025-11-04 13:06:20,963 - INFO - New record: \u041a\u042a\u0429\u0410 with price: 550 000 € - http://imot.bg/1j174723480621298
+2025-11-04 13:06:20,964 - INFO - New record: \u041a\u042a\u0429\u0410 with price: 580 000 € - http://imot.bg/1j176121010166474
+2025-11-04 13:06:20,966 - INFO - New record: \u041a\u042a\u0429\u0410 with price: 590 000 € - http://imot.bg/1j175957077629671
+2025-11-04 13:06:20,968 - INFO - New record: \u041a\u042a\u0429\u0410 with price: 700 000 € - http://imot.bg/1j170816851737950
+2025-11-04 13:06:20,969 - INFO - New record: \u041a\u042a\u0429\u0410 with price: 850 000 € - http://imot.bg/1j175749480298070
+2025-11-04 13:06:20,970 - INFO - New record: \u041a\u042a\u0429\u0410 with price: 1 200 000 € - http://imot.bg/1j175585738924548
+2025-11-04 13:06:20,972 - INFO - New record: \u041a\u042a\u0429\u0410 with price: 1 200 000 € - http://imot.bg/1j173082417194829
+2025-11-04 13:06:20,975 - INFO - New record: \u041a\u042a\u0429\u0410 with price: 1 299 000 € - http://imot.bg/1j175750732749162
+2025-11-04 13:06:20,977 - INFO - New record: \u041a\u042a\u0429\u0410 with price: 1 585 000 € - http://imot.bg/1j175636297843745
+2025-11-04 13:06:20,979 - INFO - New record: \u041a\u042a\u0429\u0410 with price: 1 650 000 € - http://imot.bg/1j176158083518437
+2025-11-04 13:06:20,981 - INFO - New record: \u041a\u042a\u0429\u0410 with price: 1 890 000 € - http://imot.bg/1j174844444002691
+2025-11-04 13:06:20,983 - INFO - New record: \u041a\u042a\u0429\u0410 with price: 3 400 000 € - http://imot.bg/1j176121007674254
+2025-11-04 13:06:20,986 - INFO - New record: \u041a\u042a\u0429\u0410 with price: \u0426\u0435\u043d\u0430 \u043f\u0440\u0438 \u0437\u0430\u043f\u0438\u0442\u0432\u0430\u043d\u0435 - http://imot.bg/1j176094965367652
+2025-11-04 13:06:20,989 - INFO - New record: \u041a\u042a\u0429\u0410 with price: 315 000 € - http://imot.bg/1j176129243109093
+2025-11-04 13:06:20,990 - INFO - New record: \u041a\u042a\u0429\u0410 with price: 400 000 € - http://imot.bg/1j175739911466914
+2025-11-04 13:06:20,992 - INFO - New record: \u041a\u042a\u0429\u0410 with price: 410 000 € - http://imot.bg/1j175931215757567
+2025-11-04 13:06:20,994 - INFO - New record: \u041a\u042a\u0429\u0410 with price: 456 300 € | \u0426\u0435\u043d\u0430\u0442\u0430 \u0435 \u0431\u0435\u0437 \u0414\u0414\u0421 - http://imot.bg/1j175309462076310
+2025-11-04 13:06:20,996 - INFO - New record: \u041a\u042a\u0429\u0410 with price: 598 000 € - http://imot.bg/1j176164139141804
+2025-11-04 13:06:20,998 - INFO - New record: \u041a\u042a\u0429\u0410 with price: 380 000 € - http://imot.bg/1j175941733397476
+2025-11-04 13:06:21,000 - INFO - New record: \u041a\u042a\u0429\u0410 with price: 460 000 € | \u0426\u0435\u043d\u0430\u0442\u0430 \u0435 \u0431\u0435\u0437 \u0414\u0414\u0421 - http://imot.bg/1j175959001277858
+2025-11-04 13:06:21,003 - INFO - New record: \u041a\u042a\u0429\u0410 with price: 533 333 € | \u0426\u0435\u043d\u0430\u0442\u0430 \u0435 \u0431\u0435\u0437 \u0414\u0414\u0421 - http://imot.bg/1j175620000336697
+2025-11-04 13:06:21,005 - INFO - New record: \u041a\u042a\u0429\u0410 with price: 650 000 € - http://imot.bg/1j176217979039761
+2025-11-04 13:06:21,007 - INFO - New record: \u041a\u042a\u0429\u0410 with price: 650 000 € - http://imot.bg/1j176196676890205
+2025-11-04 13:06:21,009 - INFO - New record: \u041a\u042a\u0429\u0410 with price: 750 000 € - http://imot.bg/1j176115719338401
+2025-11-04 13:06:21,011 - INFO - New record: \u041a\u042a\u0429\u0410 with price: 681 207 € | \u0426\u0435\u043d\u0430\u0442\u0430 \u0435 \u0431\u0435\u0437 \u0414\u0414\u0421 - http://imot.bg/1j176002093872549
+2025-11-04 13:06:21,014 - INFO - New record: \u041a\u042a\u0429\u0410 with price: 729 000 € | \u0426\u0435\u043d\u0430\u0442\u0430 \u0435 \u0431\u0435\u0437 \u0414\u0414\u0421 - http://imot.bg/1j174168722664561
+2025-11-04 13:06:21,016 - INFO - New record: \u041a\u042a\u0429\u0410 with price: 900 000 € - http://imot.bg/1j176201963921938
+2025-11-04 13:06:21,018 - INFO - New record: \u041a\u042a\u0429\u0410 with price: 780 000 € | \u0426\u0435\u043d\u0430\u0442\u0430 \u0435 \u0431\u0435\u0437 \u0414\u0414\u0421 - http://imot.bg/1j175682524104995
+2025-11-04 13:06:21,021 - INFO - New record: \u041a\u042a\u0429\u0410 with price: 780 000 € | \u0426\u0435\u043d\u0430\u0442\u0430 \u0435 \u0431\u0435\u0437 \u0414\u0414\u0421 - http://imot.bg/1j175682522487450
+2025-11-04 13:06:21,023 - INFO - New record: \u041a\u042a\u0429\u0410 with price: 948 000 € - http://imot.bg/1j176201065331465
+2025-11-04 13:06:21,026 - INFO - New record: \u041a\u042a\u0429\u0410 with price: 820 000 € | \u0426\u0435\u043d\u0430\u0442\u0430 \u0435 \u0431\u0435\u0437 \u0414\u0414\u0421 - http://imot.bg/1j175682523236772
+2025-11-04 13:06:21,028 - INFO - New record: \u041a\u042a\u0429\u0410 with price: 1 040 000 € - http://imot.bg/1j169849507640930
+2025-11-04 13:06:21,031 - INFO - New record: \u041a\u042a\u0429\u0410 with price: 1 040 000 € - http://imot.bg/1j175827396973755
+2025-11-04 13:06:21,035 - INFO - New record: \u041a\u042a\u0429\u0410 with price: 1 150 000 € - http://imot.bg/1j175941248708634
+2025-11-04 13:06:21,039 - INFO - New record: \u041a\u042a\u0429\u0410 with price: 1 200 000 € - http://imot.bg/1j175586139920241
+2025-11-04 13:06:21,043 - INFO - New record: \u041a\u042a\u0429\u0410 with price: 1 200 000 € - http://imot.bg/1j176193017980067
+2025-11-04 13:06:21,046 - INFO - New record: \u041a\u042a\u0429\u0410 with price: 1 200 000 € - http://imot.bg/1j175472786745351
+2025-11-04 13:06:21,049 - INFO - New record: \u041a\u042a\u0429\u0410 with price: 1 350 000 € - http://imot.bg/1j175253416663947
+2025-11-04 13:06:21,053 - INFO - New record: \u041a\u042a\u0429\u0410 with price: 1 450 000 € - http://imot.bg/1j176176768632207
+2025-11-04 13:06:22,418 - INFO - New record: \u041a\u042a\u0429\u0410 with price: 1 500 000 € - http://imot.bg/1j175701688197170
+2025-11-04 13:06:22,420 - INFO - New record: \u041a\u042a\u0429\u0410 with price: 1 550 000 € - http://imot.bg/1j173227842377093
+2025-11-04 13:06:22,422 - INFO - New record: \u041a\u042a\u0429\u0410 with price: 1 575 000 € - http://imot.bg/1j176218312564883
+2025-11-04 13:06:22,424 - INFO - New record: \u041a\u042a\u0429\u0410 with price: \u0426\u0435\u043d\u0430 \u043f\u0440\u0438 \u0437\u0430\u043f\u0438\u0442\u0432\u0430\u043d\u0435 - http://imot.bg/1j170533443770544
+2025-11-04 13:06:22,426 - INFO - New record: \u041a\u042a\u0429\u0410 with price: \u0426\u0435\u043d\u0430 \u043f\u0440\u0438 \u0437\u0430\u043f\u0438\u0442\u0432\u0430\u043d\u0435 - http://imot.bg/1j175551570920550
+2025-11-04 13:06:22,428 - INFO - New record: \u041a\u042a\u0429\u0410 with price: 180 000 € - http://imot.bg/1j175984502728726
+2025-11-04 13:06:22,430 - INFO - New record: \u041a\u042a\u0429\u0410 with price: 499 990 € - http://imot.bg/1j176182346917499
+2025-11-04 13:06:22,432 - INFO - New record: \u041a\u042a\u0429\u0410 with price: 540 000 € - http://imot.bg/1j175084162047691
+2025-11-04 13:06:22,434 - INFO - New record: \u041a\u042a\u0429\u0410 with price: 595 000 € - http://imot.bg/1j175879914411058
+2025-11-04 13:06:22,436 - INFO - New record: \u041a\u042a\u0429\u0410 with price: 630 000 € - http://imot.bg/1j176189556255244
+2025-11-04 13:06:22,438 - INFO - New record: \u041a\u042a\u0429\u0410 with price: 580 000 € | \u0426\u0435\u043d\u0430\u0442\u0430 \u0435 \u0431\u0435\u0437 \u0414\u0414\u0421 - http://imot.bg/1j169513703320775
+2025-11-04 13:06:22,440 - INFO - New record: \u041a\u042a\u0429\u0410 with price: 795 500 € - http://imot.bg/1j174964181851675
+2025-11-04 13:06:22,442 - INFO - New record: \u041a\u042a\u0429\u0410 with price: 899 000 € - http://imot.bg/1j176216039467024
+2025-11-04 13:06:22,444 - INFO - New record: \u041a\u042a\u0429\u0410 with price: 960 000 € - http://imot.bg/1j175629749611950
+2025-11-04 13:06:22,446 - INFO - New record: \u041a\u042a\u0429\u0410 with price: 900 000 € | \u0426\u0435\u043d\u0430\u0442\u0430 \u0435 \u0431\u0435\u0437 \u0414\u0414\u0421 - http://imot.bg/1j175896364649071
+2025-11-04 13:06:22,447 - INFO - New record: \u041a\u042a\u0429\u0410 with price: 1 250 000 € - http://imot.bg/1j175913311746605
+2025-11-04 13:06:22,450 - INFO - New record: \u041a\u042a\u0429\u0410 with price: 1 200 000 € | \u0426\u0435\u043d\u0430\u0442\u0430 \u0435 \u0431\u0435\u0437 \u0414\u0414\u0421 - http://imot.bg/1j175715642083284
+2025-11-04 13:06:22,452 - INFO - New record: \u041a\u042a\u0429\u0410 with price: 1 250 000 € | \u0426\u0435\u043d\u0430\u0442\u0430 \u0435 \u0431\u0435\u0437 \u0414\u0414\u0421 - http://imot.bg/1j176097369046699
+2025-11-04 13:06:22,454 - INFO - New record: \u041a\u042a\u0429\u0410 with price: 1 350 000 € | \u0426\u0435\u043d\u0430\u0442\u0430 \u0435 \u0431\u0435\u0437 \u0414\u0414\u0421 - http://imot.bg/1j174194640205759
+2025-11-04 13:06:22,456 - INFO - New record: \u041a\u042a\u0429\u0410 with price: 1 500 000 € | \u0426\u0435\u043d\u0430\u0442\u0430 \u0435 \u0431\u0435\u0437 \u0414\u0414\u0421 - http://imot.bg/1j175282923503872
+2025-11-04 13:06:22,458 - INFO - New record: \u041a\u042a\u0429\u0410 with price: 443 000 € - http://imot.bg/1j175197061407371
+2025-11-04 13:06:22,460 - INFO - New record: \u041a\u042a\u0429\u0410 with price: 460 000 € | \u0426\u0435\u043d\u0430\u0442\u0430 \u0435 \u0431\u0435\u0437 \u0414\u0414\u0421 - http://imot.bg/1j171688656864346
+2025-11-04 13:06:22,462 - INFO - New record: \u041a\u042a\u0429\u0410 with price: 595 804 € - http://imot.bg/1j175622562278235
+2025-11-04 13:06:22,465 - INFO - New record: \u041a\u042a\u0429\u0410 with price: 631 224 € - http://imot.bg/1j175622565089791
+2025-11-04 13:06:22,467 - INFO - New record: \u041a\u042a\u0429\u0410 with price: 649 900 € - http://imot.bg/1j174765365522193
+2025-11-04 13:06:22,470 - INFO - New record: \u041a\u042a\u0429\u0410 with price: 795 000 € - http://imot.bg/1j173029687677056
+2025-11-04 13:06:22,472 - INFO - New record: \u041a\u042a\u0429\u0410 with price: 799 000 € - http://imot.bg/1j176199295509100
+2025-11-04 13:06:22,474 - INFO - New record: \u041a\u042a\u0429\u0410 with price: 795 000 € | \u0426\u0435\u043d\u0430\u0442\u0430 \u0435 \u0431\u0435\u0437 \u0414\u0414\u0421 - http://imot.bg/1j176185524283533
+2025-11-04 13:06:22,476 - INFO - New record: \u041a\u042a\u0429\u0410 with price: 1 100 000 € - http://imot.bg/1j176007116263092
+2025-11-04 13:06:22,478 - INFO - New record: \u041a\u042a\u0429\u0410 with price: 1 200 000 € - http://imot.bg/1j176131450187863
+2025-11-04 13:06:22,480 - INFO - New record: \u041a\u042a\u0429\u0410 with price: 1 500 000 € - http://imot.bg/1j174111585367419
+2025-11-04 13:06:22,482 - INFO - New record: \u041a\u042a\u0429\u0410 with price: 2 000 000 € - http://imot.bg/1j162315318722966
+2025-11-04 13:06:22,485 - INFO - New record: \u041a\u042a\u0429\u0410 with price: 576 000 € - http://imot.bg/1j175688182296796
+2025-11-04 13:06:22,487 - INFO - New record: \u041a\u042a\u0429\u0410 with price: 649 900 € - http://imot.bg/1j172572508158036
+2025-11-04 13:06:22,489 - INFO - New record: \u041a\u042a\u0429\u0410 with price: 1 860 000 € - http://imot.bg/1j171145377348895
+2025-11-04 13:06:22,491 - INFO - New record: \u041a\u042a\u0429\u0410 with price: 360 000 € - http://imot.bg/1j174920067996683
+2025-11-04 13:06:22,493 - INFO - New record: \u041a\u042a\u0429\u0410 with price: 730 000 € - http://imot.bg/1j176222596674600
+2025-11-04 13:06:22,495 - INFO - New record: \u041a\u042a\u0429\u0410 with price: 740 000 € - http://imot.bg/1j165166784208497
+2025-11-04 13:06:22,497 - INFO - New record: \u041a\u042a\u0429\u0410 with price: 670 000 € | \u0426\u0435\u043d\u0430\u0442\u0430 \u0435 \u0431\u0435\u0437 \u0414\u0414\u0421 - http://imot.bg/1j173851276882485
+2025-11-04 13:06:22,499 - INFO - New record: \u041a\u042a\u0429\u0410 with price: 670 000 € | \u0426\u0435\u043d\u0430\u0442\u0430 \u0435 \u0431\u0435\u0437 \u0414\u0414\u0421 - http://imot.bg/1j175275347885854
+2025-11-04 13:06:23,844 - INFO - New record: \u041a\u042a\u0429\u0410 with price: 845 000 € - http://imot.bg/1j176222598050720
+2025-11-04 13:06:23,846 - INFO - New record: \u041a\u042a\u0429\u0410 with price: 720 000 € | \u0426\u0435\u043d\u0430\u0442\u0430 \u0435 \u0431\u0435\u0437 \u0414\u0414\u0421 - http://imot.bg/1j175869814532047
+2025-11-04 13:06:23,849 - INFO - New record: \u041a\u042a\u0429\u0410 with price: 780 000 € | \u0426\u0435\u043d\u0430\u0442\u0430 \u0435 \u0431\u0435\u0437 \u0414\u0414\u0421 - http://imot.bg/1j174887325118359
+2025-11-04 13:06:23,850 - INFO - New record: \u041a\u042a\u0429\u0410 with price: 936 000 € - http://imot.bg/1j175743152245549
+2025-11-04 13:06:23,852 - INFO - New record: \u041a\u042a\u0429\u0410 with price: 960 000 € - http://imot.bg/1j171387800471070
+2025-11-04 13:06:23,855 - INFO - New record: \u041a\u042a\u0429\u0410 with price: 990 000 € - http://imot.bg/1j170515247971110
+2025-11-04 13:06:23,856 - INFO - New record: \u041a\u042a\u0429\u0410 with price: 850 000 € | \u0426\u0435\u043d\u0430\u0442\u0430 \u0435 \u0431\u0435\u0437 \u0414\u0414\u0421 - http://imot.bg/1j176190329634768
+2025-11-04 13:06:23,858 - INFO - New record: \u041a\u042a\u0429\u0410 with price: 1 050 000 € - http://imot.bg/1j176059825150904
+2025-11-04 13:06:23,860 - INFO - New record: \u041a\u042a\u0429\u0410 with price: 1 560 000 € - http://imot.bg/1j176072795193743
+2025-11-04 13:06:23,862 - INFO - New record: \u041a\u042a\u0429\u0410 with price: 2 300 000 € - http://imot.bg/1j173315520769833
+2025-11-04 13:06:23,864 - INFO - New record: \u041a\u042a\u0429\u0410 with price: 2 500 000 € - http://imot.bg/1j175906984202875
+2025-11-04 13:06:23,866 - INFO - New record: \u041a\u042a\u0429\u0410 with price: \u0426\u0435\u043d\u0430 \u043f\u0440\u0438 \u0437\u0430\u043f\u0438\u0442\u0432\u0430\u043d\u0435 - http://imot.bg/1j170533442085617
+2025-11-04 13:06:23,868 - INFO - New record: \u041a\u042a\u0429\u0410 with price: 2 950 000 € - http://imot.bg/1j175285080274330
+2025-11-04 13:06:23,870 - INFO - New record: \u041a\u042a\u0429\u0410 with price: 450 000 € - http://imot.bg/1j174904525121314
+2025-11-04 13:06:23,872 - INFO - New record: \u041a\u042a\u0429\u0410 with price: 450 000 € - http://imot.bg/1j176016474696083
+2025-11-04 13:06:23,874 - INFO - New record: \u041a\u042a\u0429\u0410 with price: 459 800 € - http://imot.bg/1j175163035805940
+2025-11-04 13:06:23,876 - INFO - New record: \u041a\u042a\u0429\u0410 with price: 540 000 € - http://imot.bg/1j175387834658120
+2025-11-04 13:06:23,878 - INFO - New record: \u041a\u042a\u0429\u0410 with price: 680 000 € | \u0426\u0435\u043d\u0430\u0442\u0430 \u0435 \u0431\u0435\u0437 \u0414\u0414\u0421 - http://imot.bg/1j176131506274575
+2025-11-04 13:06:23,880 - INFO - New record: \u041a\u042a\u0429\u0410 with price: 1 250 000 € - http://imot.bg/1j175200132007059
+2025-11-04 13:06:23,882 - INFO - New record: \u041a\u042a\u0429\u0410 with price: 2 700 000 € | \u0426\u0435\u043d\u0430\u0442\u0430 \u0435 \u0431\u0435\u0437 \u0414\u0414\u0421 - http://imot.bg/1j176158082616544
+2025-11-04 13:06:23,884 - INFO - New record: \u041a\u042a\u0429\u0410 with price: 347 000 € - http://imot.bg/1j161530391531670
+2025-11-04 13:06:23,886 - INFO - New record: \u041a\u042a\u0429\u0410 with price: 350 000 € - http://imot.bg/1j173774510262132
+2025-11-04 13:06:23,888 - INFO - New record: \u041a\u042a\u0429\u0410 with price: 420 000 € - http://imot.bg/1j175224539653374
+2025-11-04 13:06:23,890 - INFO - New record: \u041a\u042a\u0429\u0410 with price: 370 000 € | \u0426\u0435\u043d\u0430\u0442\u0430 \u0435 \u0431\u0435\u0437 \u0414\u0414\u0421 - http://imot.bg/1j173288643374488
+2025-11-04 13:06:23,892 - INFO - New record: \u041a\u042a\u0429\u0410 with price: 370 000 € | \u0426\u0435\u043d\u0430\u0442\u0430 \u0435 \u0431\u0435\u0437 \u0414\u0414\u0421 - http://imot.bg/1j175753129713452
+2025-11-04 13:06:23,894 - INFO - New record: \u041a\u042a\u0429\u0410 with price: 380 000 € | \u0426\u0435\u043d\u0430\u0442\u0430 \u0435 \u0431\u0435\u0437 \u0414\u0414\u0421 - http://imot.bg/1j175753131938490
+2025-11-04 13:06:23,896 - INFO - New record: \u041a\u042a\u0429\u0410 with price: 470 000 € - http://imot.bg/1j172000134531750
+2025-11-04 13:06:23,898 - INFO - New record: \u041a\u042a\u0429\u0410 with price: 395 000 € | \u0426\u0435\u043d\u0430\u0442\u0430 \u0435 \u0431\u0435\u0437 \u0414\u0414\u0421 - http://imot.bg/1j175860783937427
+2025-11-04 13:06:23,900 - INFO - New record: \u041a\u042a\u0429\u0410 with price: 480 000 € - http://imot.bg/1j174850440880721
+2025-11-04 13:06:23,902 - INFO - New record: \u041a\u042a\u0429\u0410 with price: 500 000 € - http://imot.bg/1j174280804059371
+2025-11-04 13:06:23,904 - INFO - New record: \u041a\u042a\u0429\u0410 with price: 420 000 € | \u0426\u0435\u043d\u0430\u0442\u0430 \u0435 \u0431\u0435\u0437 \u0414\u0414\u0421 - http://imot.bg/1j175753132985559
+2025-11-04 13:06:23,906 - INFO - New record: \u041a\u042a\u0429\u0410 with price: 525 000 € - http://imot.bg/1j174947400848919
+2025-11-04 13:06:23,908 - INFO - New record: \u041a\u042a\u0429\u0410 with price: 540 000 € - http://imot.bg/1j174732302321479
+2025-11-04 13:06:23,910 - INFO - New record: \u041a\u042a\u0429\u0410 with price: 570 000 € - http://imot.bg/1j176043402521042
+2025-11-04 13:06:23,912 - INFO - New record: \u041a\u042a\u0429\u0410 with price: 579 000 € - http://imot.bg/1j175680687780823
+2025-11-04 13:06:23,914 - INFO - New record: \u041a\u042a\u0429\u0410 with price: 599 990 € - http://imot.bg/1j174043066979523
+2025-11-04 13:06:23,916 - INFO - New record: \u041a\u042a\u0429\u0410 with price: 600 000 € - http://imot.bg/1j175204146182579
+2025-11-04 13:06:23,918 - INFO - New record: \u041a\u042a\u0429\u0410 with price: 508 000 € | \u0426\u0435\u043d\u0430\u0442\u0430 \u0435 \u0431\u0435\u0437 \u0414\u0414\u0421 - http://imot.bg/1j173884854601511
+2025-11-04 13:06:23,921 - INFO - New record: \u041a\u042a\u0429\u0410 with price: 649 999 € - http://imot.bg/1j174608945886973
+2025-11-04 13:06:23,923 - INFO - New record: \u041a\u042a\u0429\u0410 with price: 659 950 € - http://imot.bg/1j175251864380877
+2025-11-04 13:06:25,251 - INFO - New record: \u041a\u042a\u0429\u0410 with price: 550 000 € | \u0426\u0435\u043d\u0430\u0442\u0430 \u0435 \u0431\u0435\u0437 \u0414\u0414\u0421 - http://imot.bg/1j175930395672744
+2025-11-04 13:06:25,253 - INFO - New record: \u041a\u042a\u0429\u0410 with price: 550 000 € | \u0426\u0435\u043d\u0430\u0442\u0430 \u0435 \u0431\u0435\u0437 \u0414\u0414\u0421 - http://imot.bg/1j174860823286721
+2025-11-04 13:06:25,255 - INFO - New record: \u041a\u042a\u0429\u0410 with price: 690 000 € - http://imot.bg/1j174602491647315
+2025-11-04 13:06:25,257 - INFO - New record: \u041a\u042a\u0429\u0410 with price: 580 000 € | \u0426\u0435\u043d\u0430\u0442\u0430 \u0435 \u0431\u0435\u0437 \u0414\u0414\u0421 - http://imot.bg/1j175930552018961
+2025-11-04 13:06:25,259 - INFO - New record: \u041a\u042a\u0429\u0410 with price: 599 999 € | \u0426\u0435\u043d\u0430\u0442\u0430 \u0435 \u0431\u0435\u0437 \u0414\u0414\u0421 - http://imot.bg/1j168205995947811
+2025-11-04 13:06:25,261 - INFO - New record: \u041a\u042a\u0429\u0410 with price: 725 000 € - http://imot.bg/1j175827162289677
+2025-11-04 13:06:25,263 - INFO - New record: \u041a\u042a\u0429\u0410 with price: 748 141 € - http://imot.bg/1j172345381183465
+2025-11-04 13:06:25,265 - INFO - New record: \u041a\u042a\u0429\u0410 with price: 750 000 € - http://imot.bg/1j175872061851297
+2025-11-04 13:06:25,267 - INFO - New record: \u041a\u042a\u0429\u0410 with price: 770 000 € - http://imot.bg/1j172120885620905
+2025-11-04 13:06:25,270 - INFO - New record: \u041a\u042a\u0429\u0410 with price: 790 000 € - http://imot.bg/1j175623878721900
+2025-11-04 13:06:25,272 - INFO - New record: \u041a\u042a\u0429\u0410 with price: 795 000 € - http://imot.bg/1j175701096034049
+2025-11-04 13:06:25,274 - INFO - New record: \u041a\u042a\u0429\u0410 with price: 670 000 € | \u0426\u0435\u043d\u0430\u0442\u0430 \u0435 \u0431\u0435\u0437 \u0414\u0414\u0421 - http://imot.bg/1j174782927632238
+2025-11-04 13:06:25,275 - INFO - New record: \u041a\u042a\u0429\u0410 with price: 820 000 € - http://imot.bg/1j176217485642017
+2025-11-04 13:06:25,278 - INFO - New record: \u041a\u042a\u0429\u0410 with price: 860 000 € - http://imot.bg/1j173381316976317
+2025-11-04 13:06:25,280 - INFO - New record: \u041a\u042a\u0429\u0410 with price: 725 000 € | \u0426\u0435\u043d\u0430\u0442\u0430 \u0435 \u0431\u0435\u0437 \u0414\u0414\u0421 - http://imot.bg/1j173928181291667
+2025-11-04 13:06:25,282 - INFO - New record: \u041a\u042a\u0429\u0410 with price: 748 141 € | \u0426\u0435\u043d\u0430\u0442\u0430 \u0435 \u0431\u0435\u0437 \u0414\u0414\u0421 - http://imot.bg/1j166678717632523
+2025-11-04 13:06:25,284 - INFO - New record: \u041a\u042a\u0429\u0410 with price: 748 145 € | \u0426\u0435\u043d\u0430\u0442\u0430 \u0435 \u0431\u0435\u0437 \u0414\u0414\u0421 - http://imot.bg/1j174774565788027
+2025-11-04 13:06:25,285 - INFO - New record: \u041a\u042a\u0429\u0410 with price: 795 000 € | \u0426\u0435\u043d\u0430\u0442\u0430 \u0435 \u0431\u0435\u0437 \u0414\u0414\u0421 - http://imot.bg/1j176124703321912
+2025-11-04 13:06:25,287 - INFO - New record: \u041a\u042a\u0429\u0410 with price: 970 000 € - http://imot.bg/1j175699438556625
+2025-11-04 13:06:25,289 - INFO - New record: \u041a\u042a\u0429\u0410 with price: 990 000 € - http://imot.bg/1j175802796616339
+2025-11-04 13:06:25,291 - INFO - New record: \u041a\u042a\u0429\u0410 with price: 990 000 € - http://imot.bg/1j174884481601429
+2025-11-04 13:06:25,293 - INFO - New record: \u041a\u042a\u0429\u0410 with price: 997 000 € - http://imot.bg/1j175355009628006
+2025-11-04 13:06:25,296 - INFO - New record: \u041a\u042a\u0429\u0410 with price: 997 000 € - http://imot.bg/1j175283694225451
+2025-11-04 13:06:25,298 - INFO - New record: \u041a\u042a\u0429\u0410 with price: 1 000 000 € - http://imot.bg/1j167083588079139
+2025-11-04 13:06:25,300 - INFO - New record: \u041a\u042a\u0429\u0410 with price: 1 000 000 € - http://imot.bg/1j166998622896833
+2025-11-04 13:06:25,302 - INFO - New record: \u041a\u042a\u0429\u0410 with price: 1 000 200 € - http://imot.bg/1j173177200538698
+2025-11-04 13:06:25,304 - INFO - New record: \u041a\u042a\u0429\u0410 with price: 870 807 € | \u0426\u0435\u043d\u0430\u0442\u0430 \u0435 \u0431\u0435\u0437 \u0414\u0414\u0421 - http://imot.bg/1j172917151590770
+2025-11-04 13:06:25,306 - INFO - New record: \u041a\u042a\u0429\u0410 with price: 1 094 999 € - http://imot.bg/1j168604000264236
+2025-11-04 13:06:25,308 - INFO - New record: \u041a\u042a\u0429\u0410 with price: 1 095 000 € - http://imot.bg/1j175160899363480
+2025-11-04 13:06:25,310 - INFO - New record: \u041a\u042a\u0429\u0410 with price: 1 095 000 € - http://imot.bg/1j175317487512698
+2025-11-04 13:06:25,312 - INFO - New record: \u041a\u042a\u0429\u0410 with price: 1 095 000 € - http://imot.bg/1j173348894701976
+2025-11-04 13:06:25,314 - INFO - New record: \u041a\u042a\u0429\u0410 with price: 1 095 000 € - http://imot.bg/1j174003630915087
+2025-11-04 13:06:25,316 - INFO - New record: \u041a\u042a\u0429\u0410 with price: 1 095 348 € - http://imot.bg/1j170798162954859
+2025-11-04 13:06:25,318 - INFO - New record: \u041a\u042a\u0429\u0410 with price: 1 150 000 € - http://imot.bg/1j174714084766943
+2025-11-04 13:06:25,320 - INFO - New record: \u041a\u042a\u0429\u0410 with price: 1 199 000 € - http://imot.bg/1j175437878854032
+2025-11-04 13:06:25,322 - INFO - New record: \u041a\u042a\u0429\u0410 with price: 1 200 000 € - http://imot.bg/1j169892700211534
+2025-11-04 13:06:25,324 - INFO - New record: \u041a\u042a\u0429\u0410 with price: 1 200 000 € - http://imot.bg/1j175283103261905
+2025-11-04 13:06:25,327 - INFO - New record: \u041a\u042a\u0429\u0410 with price: 1 200 000 € - http://imot.bg/1j171889208127535
+2025-11-04 13:06:25,329 - INFO - New record: \u041a\u042a\u0429\u0410 with price: 1 250 000 € - http://imot.bg/1j168545325617252
+2025-11-04 13:06:25,331 - INFO - New record: \u041a\u042a\u0429\u0410 with price: 1 094 950 € | \u0426\u0435\u043d\u0430\u0442\u0430 \u0435 \u0431\u0435\u0437 \u0414\u0414\u0421 - http://imot.bg/1j166678650141461
+2025-11-04 13:06:26,644 - INFO - New record: \u041a\u042a\u0429\u0410 with price: 1 095 348 € | \u0426\u0435\u043d\u0430\u0442\u0430 \u0435 \u0431\u0435\u0437 \u0414\u0414\u0421 - http://imot.bg/1j173226699140870
+2025-11-04 13:06:26,649 - INFO - New record: \u041a\u042a\u0429\u0410 with price: 1 095 349 € | \u0426\u0435\u043d\u0430\u0442\u0430 \u0435 \u0431\u0435\u0437 \u0414\u0414\u0421 - http://imot.bg/1j174774546852029
+2025-11-04 13:06:26,651 - INFO - New record: \u041a\u042a\u0429\u0410 with price: 1 100 000 € | \u0426\u0435\u043d\u0430\u0442\u0430 \u0435 \u0431\u0435\u0437 \u0414\u0414\u0421 - http://imot.bg/1j176209102025197
+2025-11-04 13:06:26,654 - INFO - New record: \u041a\u042a\u0429\u0410 with price: 1 138 000 € | \u0426\u0435\u043d\u0430\u0442\u0430 \u0435 \u0431\u0435\u0437 \u0414\u0414\u0421 - http://imot.bg/1j175533480271040
+2025-11-04 13:06:26,656 - INFO - New record: \u041a\u042a\u0429\u0410 with price: 1 139 000 € | \u0426\u0435\u043d\u0430\u0442\u0430 \u0435 \u0431\u0435\u0437 \u0414\u0414\u0421 - http://imot.bg/1j173156942189435
+2025-11-04 13:06:26,659 - INFO - New record: \u041a\u042a\u0429\u0410 with price: 1 500 000 € - http://imot.bg/1j165969357399697
+2025-11-04 13:06:26,663 - INFO - New record: \u041a\u042a\u0429\u0410 with price: 1 600 000 € - http://imot.bg/1j175430375245726
+2025-11-04 13:06:26,665 - INFO - New record: \u041a\u042a\u0429\u0410 with price: 1 600 000 € - http://imot.bg/1j175200600952105
+2025-11-04 13:06:26,667 - INFO - New record: \u041a\u042a\u0429\u0410 with price: 1 650 000 € - http://imot.bg/1j176059298857450
+2025-11-04 13:06:26,669 - INFO - New record: \u041a\u042a\u0429\u0410 with price: 1 500 000 € | \u0426\u0435\u043d\u0430\u0442\u0430 \u0435 \u0431\u0435\u0437 \u0414\u0414\u0421 - http://imot.bg/1j174402876260423
+2025-11-04 13:06:26,671 - INFO - New record: \u041a\u042a\u0429\u0410 with price: 1 870 000 € - http://imot.bg/1j169711010317320
+2025-11-04 13:06:26,673 - INFO - New record: \u041a\u042a\u0429\u0410 with price: 1 889 900 € - http://imot.bg/1j175671173598323
+2025-11-04 13:06:26,675 - INFO - New record: \u041a\u042a\u0429\u0410 with price: 1 890 000 € - http://imot.bg/1j171861469230624
+2025-11-04 13:06:26,677 - INFO - New record: \u041a\u042a\u0429\u0410 with price: 1 890 000 € - http://imot.bg/1j175681184177955
+2025-11-04 13:06:26,679 - INFO - New record: \u041a\u042a\u0429\u0410 with price: 1 890 000 € - http://imot.bg/1j175705475097235
+2025-11-04 13:06:26,681 - INFO - New record: \u041a\u042a\u0429\u0410 with price: 2 000 000 € - http://imot.bg/1j171809583183085
+2025-11-04 13:06:26,683 - INFO - New record: \u041a\u042a\u0429\u0410 with price: 2 050 000 € - http://imot.bg/1j174979958693086
+2025-11-04 13:06:26,685 - INFO - New record: \u041a\u042a\u0429\u0410 with price: 1 990 000 € | \u0426\u0435\u043d\u0430\u0442\u0430 \u0435 \u0431\u0435\u0437 \u0414\u0414\u0421 - http://imot.bg/1j166938743556091
+2025-11-04 13:06:26,687 - INFO - New record: \u041a\u042a\u0429\u0410 with price: 2 500 000 € - http://imot.bg/1j167707085912699
+2025-11-04 13:06:26,689 - INFO - New record: \u041a\u042a\u0429\u0410 with price: 2 500 000 € - http://imot.bg/1j174229279696149
+2025-11-04 13:06:26,690 - INFO - New record: \u041a\u042a\u0429\u0410 with price: 2 900 000 € - http://imot.bg/1j175923000401612
+2025-11-04 13:06:26,692 - INFO - New record: \u041a\u042a\u0429\u0410 with price: 2 900 000 € - http://imot.bg/1j167999342080393
+2025-11-04 13:06:26,694 - INFO - New record: \u041a\u042a\u0429\u0410 with price: 2 900 000 € - http://imot.bg/1j175585982525824
+2025-11-04 13:06:26,696 - INFO - New record: \u041a\u042a\u0429\u0410 with price: 3 000 000 € - http://imot.bg/1j145768974756329
+2025-11-04 13:06:26,698 - INFO - New record: \u041a\u042a\u0429\u0410 with price: 3 000 000 € - http://imot.bg/1j161847060101956
+2025-11-04 13:06:26,700 - INFO - New record: \u041a\u042a\u0429\u0410 with price: 2 500 000 € | \u0426\u0435\u043d\u0430\u0442\u0430 \u0435 \u0431\u0435\u0437 \u0414\u0414\u0421 - http://imot.bg/1j167535464497807
+2025-11-04 13:06:26,702 - INFO - New record: \u041a\u042a\u0429\u0410 with price: 3 000 000 € - http://imot.bg/1j175335669746894
+2025-11-04 13:06:26,704 - INFO - New record: \u041a\u042a\u0429\u0410 with price: 3 000 000 € - http://imot.bg/1j159758289636688
+2025-11-04 13:06:26,706 - INFO - New record: \u041a\u042a\u0429\u0410 with price: 3 150 000 € - http://imot.bg/1j160458546192344
+2025-11-04 13:06:26,708 - INFO - New record: \u041a\u042a\u0429\u0410 with price: 3 150 000 € - http://imot.bg/1j138676156653804
+2025-11-04 13:06:26,710 - INFO - New record: \u041a\u042a\u0429\u0410 with price: 3 300 000 € - http://imot.bg/1j175387888958025
+2025-11-04 13:06:26,712 - INFO - New record: \u041a\u042a\u0429\u0410 with price: 3 300 000 € - http://imot.bg/1j173937872571426
+2025-11-04 13:06:26,714 - INFO - New record: \u041a\u042a\u0429\u0410 with price: 3 393 000 € - http://imot.bg/1j171627765088440
+2025-11-04 13:06:26,716 - INFO - New record: \u041a\u042a\u0429\u0410 with price: 3 500 000 € - http://imot.bg/1j173857104227468
+2025-11-04 13:06:26,718 - INFO - New record: \u041a\u042a\u0429\u0410 with price: 3 500 000 € - http://imot.bg/1j173445917412891
+2025-11-04 13:06:26,720 - INFO - New record: \u041a\u042a\u0429\u0410 with price: 2 999 000 € | \u0426\u0435\u043d\u0430\u0442\u0430 \u0435 \u0431\u0435\u0437 \u0414\u0414\u0421 - http://imot.bg/1j173878021899191
+2025-11-04 13:06:26,723 - INFO - New record: \u041a\u042a\u0429\u0410 with price: 2 999 000 € | \u0426\u0435\u043d\u0430\u0442\u0430 \u0435 \u0431\u0435\u0437 \u0414\u0414\u0421 - http://imot.bg/1j170428651016313
+2025-11-04 13:06:26,725 - INFO - New record: \u041a\u042a\u0429\u0410 with price: 3 000 000 € | \u0426\u0435\u043d\u0430\u0442\u0430 \u0435 \u0431\u0435\u0437 \u0414\u0414\u0421 - http://imot.bg/1j173692649821315
+2025-11-04 13:06:26,727 - INFO - New record: \u041a\u042a\u0429\u0410 with price: 3 800 000 € - http://imot.bg/1j175982204105878
+2025-11-04 13:06:26,729 - INFO - New record: \u041a\u042a\u0429\u0410 with price: 4 200 000 € - http://imot.bg/1j171947410803690
+2025-11-04 13:06:28,078 - INFO - New record: \u041a\u042a\u0429\u0410 with price: 4 200 000 € - http://imot.bg/1j172293948834978
+2025-11-04 13:06:28,080 - INFO - New record: \u041a\u042a\u0429\u0410 with price: 8 000 000 € - http://imot.bg/1j171086779696897
+2025-11-04 13:06:28,083 - INFO - New record: \u041a\u042a\u0429\u0410 with price: \u0426\u0435\u043d\u0430 \u043f\u0440\u0438 \u0437\u0430\u043f\u0438\u0442\u0432\u0430\u043d\u0435 - http://imot.bg/1j175915680674550
+2025-11-04 13:06:28,086 - INFO - New record: \u041a\u042a\u0429\u0410 with price: \u0426\u0435\u043d\u0430 \u043f\u0440\u0438 \u0437\u0430\u043f\u0438\u0442\u0432\u0430\u043d\u0435 - http://imot.bg/1j175259401287827
+2025-11-04 13:06:28,089 - INFO - New record: \u041a\u042a\u0429\u0410 with price: \u0426\u0435\u043d\u0430 \u043f\u0440\u0438 \u0437\u0430\u043f\u0438\u0442\u0432\u0430\u043d\u0435 - http://imot.bg/1j160458303475585
+2025-11-04 13:06:28,091 - INFO - New record: \u041a\u042a\u0429\u0410 with price: 14 000 € | \u0426\u0435\u043d\u0430\u0442\u0430 \u0435 \u0431\u0435\u0437 \u0414\u0414\u0421 - http://imot.bg/1j171674833592262
+2025-11-04 13:06:28,094 - INFO - New record: \u041a\u042a\u0429\u0410 with price: 76 000 € - http://imot.bg/1j174897149443690
+2025-11-04 13:06:28,097 - INFO - New record: \u041a\u042a\u0429\u0410 with price: 210 000 € - http://imot.bg/1j174749766120705
+2025-11-04 13:06:28,099 - INFO - New record: \u041a\u042a\u0429\u0410 with price: 260 000 € - http://imot.bg/1j172804759794664
+2025-11-04 13:06:28,102 - INFO - New record: \u041a\u042a\u0429\u0410 with price: 260 000 € - http://imot.bg/1j173133501703187
+2025-11-04 13:06:28,105 - INFO - New record: \u041a\u042a\u0429\u0410 with price: 280 000 € - http://imot.bg/1j175629942744321
+2025-11-04 13:06:28,107 - INFO - New record: \u041a\u042a\u0429\u0410 with price: 300 000 € - http://imot.bg/1j176043042589864
+2025-11-04 13:06:28,110 - INFO - New record: \u041a\u042a\u0429\u0410 with price: 320 000 € - http://imot.bg/1j168733244538513
+2025-11-04 13:06:28,113 - INFO - New record: \u041a\u042a\u0429\u0410 with price: 350 000 € - http://imot.bg/1j175714189330272
+2025-11-04 13:06:28,114 - INFO - New record: \u041a\u042a\u0429\u0410 with price: 358 000 € - http://imot.bg/1j175871253411017
+2025-11-04 13:06:28,117 - INFO - New record: \u041a\u042a\u0429\u0410 with price: 390 000 € - http://imot.bg/1j175861832633929
+2025-11-04 13:06:28,119 - INFO - New record: \u041a\u042a\u0429\u0410 with price: 390 000 € - http://imot.bg/1j175131193577959
+2025-11-04 13:06:28,121 - INFO - New record: \u041a\u042a\u0429\u0410 with price: 410 000 € - http://imot.bg/1j174220265396019
+2025-11-04 13:06:28,122 - INFO - New record: \u041a\u042a\u0429\u0410 with price: 465 000 € - http://imot.bg/1j175931123455536
+2025-11-04 13:06:28,124 - INFO - New record: \u041a\u042a\u0429\u0410 with price: 465 000 € - http://imot.bg/1j175891153944312
+2025-11-04 13:06:28,126 - INFO - New record: \u041a\u042a\u0429\u0410 with price: 422 500 € | \u0426\u0435\u043d\u0430\u0442\u0430 \u0435 \u0431\u0435\u0437 \u0414\u0414\u0421 - http://imot.bg/1j175768278290021
+2025-11-04 13:06:28,129 - INFO - New record: \u041a\u042a\u0429\u0410 with price: 422 500 € | \u0426\u0435\u043d\u0430\u0442\u0430 \u0435 \u0431\u0435\u0437 \u0414\u0414\u0421 - http://imot.bg/1j175768201343578
+2025-11-04 13:06:28,131 - INFO - New record: \u041a\u042a\u0429\u0410 with price: 540 000 € - http://imot.bg/1j174860165573553
+2025-11-04 13:06:28,133 - INFO - New record: \u041a\u042a\u0429\u0410 with price: 550 000 € - http://imot.bg/1j175700035539319
+2025-11-04 13:06:28,134 - INFO - New record: \u041a\u042a\u0429\u0410 with price: 567 840 € - http://imot.bg/1j175682539472236
+2025-11-04 13:06:28,136 - INFO - New record: \u041a\u042a\u0429\u0410 with price: 480 000 € | \u0426\u0435\u043d\u0430\u0442\u0430 \u0435 \u0431\u0435\u0437 \u0414\u0414\u0421 - http://imot.bg/1j175688244723648
+2025-11-04 13:06:28,138 - INFO - New record: \u041a\u042a\u0429\u0410 with price: 508 000 € | \u0426\u0435\u043d\u0430\u0442\u0430 \u0435 \u0431\u0435\u0437 \u0414\u0414\u0421 - http://imot.bg/1j173884882896596
+2025-11-04 13:06:28,140 - INFO - New record: \u041a\u042a\u0429\u0410 with price: 650 000 € - http://imot.bg/1j173211133323513
+2025-11-04 13:06:28,142 - INFO - New record: \u041a\u042a\u0429\u0410 with price: 650 000 € - http://imot.bg/1j176096904973276
+2025-11-04 13:06:28,144 - INFO - New record: \u041a\u042a\u0429\u0410 with price: 665 000 € - http://imot.bg/1j174955118198091
+2025-11-04 13:06:28,146 - INFO - New record: \u041a\u042a\u0429\u0410 with price: 720 000 € - http://imot.bg/1j174680064645790
+2025-11-04 13:06:28,148 - INFO - New record: \u041a\u042a\u0429\u0410 with price: 825 000 € - http://imot.bg/1j167092386285370
+2025-11-04 13:06:28,150 - INFO - New record: \u041a\u042a\u0429\u0410 with price: 1 450 000 € - http://imot.bg/1j176034266448921
+2025-11-04 13:06:28,154 - INFO - New record: \u041a\u042a\u0429\u0410 with price: 1 216 000 € | \u0426\u0435\u043d\u0430\u0442\u0430 \u0435 \u0431\u0435\u0437 \u0414\u0414\u0421 - http://imot.bg/1j175688321990546
+2025-11-04 13:06:28,156 - INFO - New record: \u041a\u042a\u0429\u0410 with price: 1 460 000 € - http://imot.bg/1j175688300286110
+2025-11-04 13:06:28,158 - INFO - New record: \u041a\u042a\u0429\u0410 with price: 1 375 000 € | \u0426\u0435\u043d\u0430\u0442\u0430 \u0435 \u0431\u0435\u0437 \u0414\u0414\u0421 - http://imot.bg/1j176175468443280
+2025-11-04 13:06:28,160 - INFO - New record: \u041a\u042a\u0429\u0410 with price: 1 375 000 € | \u0426\u0435\u043d\u0430\u0442\u0430 \u0435 \u0431\u0435\u0437 \u0414\u0414\u0421 - http://imot.bg/1j172120680267792
+2025-11-04 13:06:28,162 - INFO - New record: \u041a\u042a\u0429\u0410 with price: 1 375 500 € | \u0426\u0435\u043d\u0430\u0442\u0430 \u0435 \u0431\u0435\u0437 \u0414\u0414\u0421 - http://imot.bg/1j172052612434810
+2025-11-04 13:06:28,164 - INFO - New record: \u041a\u042a\u0429\u0410 with price: 1 700 000 € - http://imot.bg/1j174703620269821
+2025-11-04 13:06:28,165 - INFO - New record: \u041a\u042a\u0429\u0410 with price: 1 425 000 € | \u0426\u0435\u043d\u0430\u0442\u0430 \u0435 \u0431\u0435\u0437 \u0414\u0414\u0421 - http://imot.bg/1j173840474832725
+2025-11-04 13:06:29,482 - INFO - New record: \u041a\u042a\u0429\u0410 with price: 1 750 000 € - http://imot.bg/1j175974125376966
+2025-11-04 13:06:29,484 - INFO - New record: \u041a\u042a\u0429\u0410 with price: \u0426\u0435\u043d\u0430 \u043f\u0440\u0438 \u0437\u0430\u043f\u0438\u0442\u0432\u0430\u043d\u0435 - http://imot.bg/1j174591121939427
+2025-11-04 13:06:29,486 - INFO - New record: \u041a\u042a\u0429\u0410 with price: \u0426\u0435\u043d\u0430 \u043f\u0440\u0438 \u0437\u0430\u043f\u0438\u0442\u0432\u0430\u043d\u0435 - http://imot.bg/1j172052651078047
+2025-11-04 13:06:29,489 - INFO - New record: \u041a\u042a\u0429\u0410 with price: 370 000 € - http://imot.bg/1j173099831551087
+2025-11-04 13:06:29,491 - INFO - New record: \u041a\u042a\u0429\u0410 with price: 420 000 € - http://imot.bg/1j175215322484763
+2025-11-04 13:06:29,493 - INFO - New record: \u041a\u042a\u0429\u0410 with price: 500 000 € - http://imot.bg/1j174014535744179
+2025-11-04 13:06:29,495 - INFO - New record: \u041a\u042a\u0429\u0410 with price: 487 000 € | \u0426\u0435\u043d\u0430\u0442\u0430 \u0435 \u0431\u0435\u0437 \u0414\u0414\u0421 - http://imot.bg/1j175439583179453
+2025-11-04 13:06:29,496 - INFO - New record: \u041a\u042a\u0429\u0410 with price: 590 000 € - http://imot.bg/1j171162596845237
+2025-11-04 13:06:29,499 - INFO - New record: \u041a\u042a\u0429\u0410 with price: 625 000 € - http://imot.bg/1j175308602307561
+2025-11-04 13:06:29,500 - INFO - New record: \u041a\u042a\u0429\u0410 with price: 650 000 € - http://imot.bg/1j168380470361980
+2025-11-04 13:06:29,503 - INFO - New record: \u041a\u042a\u0429\u0410 with price: 650 000 € - http://imot.bg/1j175499042697135
+2025-11-04 13:06:29,504 - INFO - New record: \u041a\u042a\u0429\u0410 with price: 659 000 € - http://imot.bg/1j175872601091056
+2025-11-04 13:06:29,506 - INFO - New record: \u041a\u042a\u0429\u0410 with price: 700 000 € - http://imot.bg/1j175913764513910
+2025-11-04 13:06:29,509 - INFO - New record: \u041a\u042a\u0429\u0410 with price: 720 000 € - http://imot.bg/1j175801531420914
+2025-11-04 13:06:29,510 - INFO - New record: \u041a\u042a\u0429\u0410 with price: 610 000 € | \u0426\u0435\u043d\u0430\u0442\u0430 \u0435 \u0431\u0435\u0437 \u0414\u0414\u0421 - http://imot.bg/1j170133201967231
+2025-11-04 13:06:29,512 - INFO - New record: \u041a\u042a\u0429\u0410 with price: 610 000 € | \u0426\u0435\u043d\u0430\u0442\u0430 \u0435 \u0431\u0435\u0437 \u0414\u0414\u0421 - http://imot.bg/1j173877123600756
+2025-11-04 13:06:29,514 - INFO - New record: \u041a\u042a\u0429\u0410 with price: 610 000 € | \u0426\u0435\u043d\u0430\u0442\u0430 \u0435 \u0431\u0435\u0437 \u0414\u0414\u0421 - http://imot.bg/1j169943532504138
+2025-11-04 13:06:29,516 - INFO - New record: \u041a\u042a\u0429\u0410 with price: 778 840 € - http://imot.bg/1j174948560134151
+2025-11-04 13:06:29,519 - INFO - New record: \u041a\u042a\u0429\u0410 with price: 778 840 € - http://imot.bg/1j174948664801501
+2025-11-04 13:06:29,520 - INFO - New record: \u041a\u042a\u0429\u0410 with price: 649 550 € | \u0426\u0435\u043d\u0430\u0442\u0430 \u0435 \u0431\u0435\u0437 \u0414\u0414\u0421 - http://imot.bg/1j175509063163420
+2025-11-04 13:06:29,522 - INFO - New record: \u041a\u042a\u0429\u0410 with price: 650 000 € | \u0426\u0435\u043d\u0430\u0442\u0430 \u0435 \u0431\u0435\u0437 \u0414\u0414\u0421 - http://imot.bg/1j175319881620234
+2025-11-04 13:06:29,525 - INFO - New record: \u041a\u042a\u0429\u0410 with price: 784 884 € - http://imot.bg/1j174948627112777
+2025-11-04 13:06:29,526 - INFO - New record: \u041a\u042a\u0429\u0410 with price: 790 000 € - http://imot.bg/1j173218112643707
+2025-11-04 13:06:29,528 - INFO - New record: \u041a\u042a\u0429\u0410 with price: 790 000 € - http://imot.bg/1j175066924481745
+2025-11-04 13:06:29,530 - INFO - New record: \u041a\u042a\u0429\u0410 with price: 800 000 € - http://imot.bg/1j176072491698221
+2025-11-04 13:06:29,532 - INFO - New record: \u041a\u042a\u0429\u0410 with price: 670 000 € | \u0426\u0435\u043d\u0430\u0442\u0430 \u0435 \u0431\u0435\u0437 \u0414\u0414\u0421 - http://imot.bg/1j174725174393970
+2025-11-04 13:06:29,534 - INFO - New record: \u041a\u042a\u0429\u0410 with price: 670 000 € | \u0426\u0435\u043d\u0430\u0442\u0430 \u0435 \u0431\u0435\u0437 \u0414\u0414\u0421 - http://imot.bg/1j176175449956796
+2025-11-04 13:06:29,537 - INFO - New record: \u041a\u042a\u0429\u0410 with price: 670 000 € | \u0426\u0435\u043d\u0430\u0442\u0430 \u0435 \u0431\u0435\u0437 \u0414\u0414\u0421 - http://imot.bg/1j175682525034039
+2025-11-04 13:06:29,538 - INFO - New record: \u041a\u042a\u0429\u0410 with price: 670 000 € | \u0426\u0435\u043d\u0430\u0442\u0430 \u0435 \u0431\u0435\u0437 \u0414\u0414\u0421 - http://imot.bg/1j174281726337974
+2025-11-04 13:06:29,541 - INFO - New record: \u041a\u042a\u0429\u0410 with price: 670 000 € | \u0426\u0435\u043d\u0430\u0442\u0430 \u0435 \u0431\u0435\u0437 \u0414\u0414\u0421 - http://imot.bg/1j175990922928335
+2025-11-04 13:06:29,543 - INFO - New record: \u041a\u042a\u0429\u0410 with price: 670 000 € | \u0426\u0435\u043d\u0430\u0442\u0430 \u0435 \u0431\u0435\u0437 \u0414\u0414\u0421 - http://imot.bg/1j175336269020781
+2025-11-04 13:06:29,544 - INFO - New record: \u041a\u042a\u0429\u0410 with price: 830 000 € - http://imot.bg/1j175492441125317
+2025-11-04 13:06:29,546 - INFO - New record: \u041a\u042a\u0429\u0410 with price: 830 000 € - http://imot.bg/1j175715640490150
+2025-11-04 13:06:29,548 - INFO - New record: \u041a\u042a\u0429\u0410 with price: 834 999 € - http://imot.bg/1j175636105868219
+2025-11-04 13:06:29,550 - INFO - New record: \u041a\u042a\u0429\u0410 with price: 729 000 € | \u0426\u0435\u043d\u0430\u0442\u0430 \u0435 \u0431\u0435\u0437 \u0414\u0414\u0421 - http://imot.bg/1j176111636095209
+2025-11-04 13:06:29,552 - INFO - New record: \u041a\u042a\u0429\u0410 with price: 880 000 € - http://imot.bg/1j173807850484249
+2025-11-04 13:06:29,555 - INFO - New record: \u041a\u042a\u0429\u0410 with price: 890 000 € - http://imot.bg/1j175826524102090
+2025-11-04 13:06:29,557 - INFO - New record: \u041a\u042a\u0429\u0410 with price: 890 000 € - http://imot.bg/1j175372081558060
+2025-11-04 13:06:29,559 - INFO - New record: \u041a\u042a\u0429\u0410 with price: 899 000 € - http://imot.bg/1j173753402754808
+2025-11-04 13:06:29,561 - INFO - New record: \u041a\u042a\u0429\u0410 with price: 899 000 € - http://imot.bg/1j173753402270775
+2025-11-04 13:06:30,903 - INFO - New record: \u041a\u042a\u0429\u0410 with price: 750 000 € | \u0426\u0435\u043d\u0430\u0442\u0430 \u0435 \u0431\u0435\u0437 \u0414\u0414\u0421 - http://imot.bg/1j176225284247330
+2025-11-04 13:06:30,905 - INFO - New record: \u041a\u042a\u0429\u0410 with price: 750 000 € | \u0426\u0435\u043d\u0430\u0442\u0430 \u0435 \u0431\u0435\u0437 \u0414\u0414\u0421 - http://imot.bg/1j173136295670408
+2025-11-04 13:06:30,907 - INFO - New record: \u041a\u042a\u0429\u0410 with price: 760 000 € | \u0426\u0435\u043d\u0430\u0442\u0430 \u0435 \u0431\u0435\u0437 \u0414\u0414\u0421 - http://imot.bg/1j174725153827615
+2025-11-04 13:06:30,909 - INFO - New record: \u041a\u042a\u0429\u0410 with price: 760 000 € | \u0426\u0435\u043d\u0430\u0442\u0430 \u0435 \u0431\u0435\u0437 \u0414\u0414\u0421 - http://imot.bg/1j173096965071930
+2025-11-04 13:06:30,911 - INFO - New record: \u041a\u042a\u0429\u0410 with price: 760 000 € | \u0426\u0435\u043d\u0430\u0442\u0430 \u0435 \u0431\u0435\u0437 \u0414\u0414\u0421 - http://imot.bg/1j173852233456967
+2025-11-04 13:06:30,913 - INFO - New record: \u041a\u042a\u0429\u0410 with price: 780 000 € | \u0426\u0435\u043d\u0430\u0442\u0430 \u0435 \u0431\u0435\u0437 \u0414\u0414\u0421 - http://imot.bg/1j176175448308432
+2025-11-04 13:06:30,915 - INFO - New record: \u041a\u042a\u0429\u0410 with price: 780 000 € | \u0426\u0435\u043d\u0430\u0442\u0430 \u0435 \u0431\u0435\u0437 \u0414\u0414\u0421 - http://imot.bg/1j176175444850253
+2025-11-04 13:06:30,917 - INFO - New record: \u041a\u042a\u0429\u0410 with price: 780 000 € | \u0426\u0435\u043d\u0430\u0442\u0430 \u0435 \u0431\u0435\u0437 \u0414\u0414\u0421 - http://imot.bg/1j176112998888881
+2025-11-04 13:06:30,919 - INFO - New record: \u041a\u042a\u0429\u0410 with price: 780 000 € | \u0426\u0435\u043d\u0430\u0442\u0430 \u0435 \u0431\u0435\u0437 \u0414\u0414\u0421 - http://imot.bg/1j175336320035423
+2025-11-04 13:06:30,921 - INFO - New record: \u041a\u042a\u0429\u0410 with price: 960 000 € - http://imot.bg/1j172413632287972
+2025-11-04 13:06:30,923 - INFO - New record: \u041a\u042a\u0429\u0410 with price: 960 000 € - http://imot.bg/1j176044922690218
+2025-11-04 13:06:30,925 - INFO - New record: \u041a\u042a\u0429\u0410 with price: 960 000 € - http://imot.bg/1j175248646036013
+2025-11-04 13:06:30,927 - INFO - New record: \u041a\u042a\u0429\u0410 with price: 820 000 € | \u0426\u0435\u043d\u0430\u0442\u0430 \u0435 \u0431\u0435\u0437 \u0414\u0414\u0421 - http://imot.bg/1j176175446561732
+2025-11-04 13:06:30,929 - INFO - New record: \u041a\u042a\u0429\u0410 with price: 990 000 € - http://imot.bg/1j175274427445387
+2025-11-04 13:06:30,931 - INFO - New record: \u041a\u042a\u0429\u0410 with price: 999 999 € - http://imot.bg/1j175636754457049
+2025-11-04 13:06:30,932 - INFO - New record: \u041a\u042a\u0429\u0410 with price: 999 999 € - http://imot.bg/1j174134614828204
+2025-11-04 13:06:30,934 - INFO - New record: \u041a\u042a\u0429\u0410 with price: 1 000 000 € - http://imot.bg/1j172493425848361
+2025-11-04 13:06:30,937 - INFO - New record: \u041a\u042a\u0429\u0410 with price: 835 120 € | \u0426\u0435\u043d\u0430\u0442\u0430 \u0435 \u0431\u0435\u0437 \u0414\u0414\u0421 - http://imot.bg/1j165587436603271
+2025-11-04 13:06:30,939 - INFO - New record: \u041a\u042a\u0429\u0410 with price: 835 120 € | \u0426\u0435\u043d\u0430\u0442\u0430 \u0435 \u0431\u0435\u0437 \u0414\u0414\u0421 - http://imot.bg/1j172727113249112
+2025-11-04 13:06:30,941 - INFO - New record: \u041a\u042a\u0429\u0410 with price: 836 000 € | \u0426\u0435\u043d\u0430\u0442\u0430 \u0435 \u0431\u0435\u0437 \u0414\u0414\u0421 - http://imot.bg/1j165583446562059
+2025-11-04 13:06:30,943 - INFO - New record: \u041a\u042a\u0429\u0410 with price: 850 000 € | \u0426\u0435\u043d\u0430\u0442\u0430 \u0435 \u0431\u0435\u0437 \u0414\u0414\u0421 - http://imot.bg/1j173711642206725
+2025-11-04 13:06:30,945 - INFO - New record: \u041a\u042a\u0429\u0410 with price: 850 000 € | \u0426\u0435\u043d\u0430\u0442\u0430 \u0435 \u0431\u0435\u0437 \u0414\u0414\u0421 - http://imot.bg/1j171093203517056
+2025-11-04 13:06:30,947 - INFO - New record: \u041a\u042a\u0429\u0410 with price: 890 000 € | \u0426\u0435\u043d\u0430\u0442\u0430 \u0435 \u0431\u0435\u0437 \u0414\u0414\u0421 - http://imot.bg/1j175299920800282
+2025-11-04 13:06:30,949 - INFO - New record: \u041a\u042a\u0429\u0410 with price: 1 099 000 € - http://imot.bg/1j175981871046711
+2025-11-04 13:06:30,951 - INFO - New record: \u041a\u042a\u0429\u0410 with price: 1 100 000 € - http://imot.bg/1j171749658021322
+2025-11-04 13:06:30,953 - INFO - New record: \u041a\u042a\u0429\u0410 with price: 1 100 000 € - http://imot.bg/1j176172959438963
+2025-11-04 13:06:30,955 - INFO - New record: \u041a\u042a\u0429\u0410 with price: 1 100 000 € - http://imot.bg/1j172051923193940
+2025-11-04 13:06:30,957 - INFO - New record: \u041a\u042a\u0429\u0410 with price: 1 100 000 € - http://imot.bg/1j168236026308915
+2025-11-04 13:06:30,959 - INFO - New record: \u041a\u042a\u0429\u0410 with price: 1 100 000 € - http://imot.bg/1j176001621817413
+2025-11-04 13:06:30,960 - INFO - New record: \u041a\u042a\u0429\u0410 with price: 1 150 000 € - http://imot.bg/1j176220181871746
+2025-11-04 13:06:30,962 - INFO - New record: \u041a\u042a\u0429\u0410 with price: 1 150 000 € - http://imot.bg/1j175551210121994
+2025-11-04 13:06:30,964 - INFO - New record: \u041a\u042a\u0429\u0410 with price: 1 150 000 € - http://imot.bg/1j175871303297281
+2025-11-04 13:06:30,966 - INFO - New record: \u041a\u042a\u0429\u0410 with price: 1 200 000 € - http://imot.bg/1j176176144737363
+2025-11-04 13:06:30,968 - INFO - New record: \u041a\u042a\u0429\u0410 with price: 1 200 000 € - http://imot.bg/1j174731559279794
+2025-11-04 13:06:30,970 - INFO - New record: \u041a\u042a\u0429\u0410 with price: 1 200 000 € - http://imot.bg/1j169184403483225
+2025-11-04 13:06:30,972 - INFO - New record: \u041a\u042a\u0429\u0410 with price: 1 225 000 € - http://imot.bg/1j171930288321703
+2025-11-04 13:06:30,974 - INFO - New record: \u041a\u042a\u0429\u0410 with price: 1 021 357 € | \u0426\u0435\u043d\u0430\u0442\u0430 \u0435 \u0431\u0435\u0437 \u0414\u0414\u0421 - http://imot.bg/1j170239066700119
+2025-11-04 13:06:30,976 - INFO - New record: \u041a\u042a\u0429\u0410 with price: 1 250 000 € - http://imot.bg/1j175076906850968
+2025-11-04 13:06:30,978 - INFO - New record: \u041a\u042a\u0429\u0410 with price: 1 250 000 € - http://imot.bg/1j168545352302933
+2025-11-04 13:06:30,980 - INFO - New record: \u041a\u042a\u0429\u0410 with price: 1 050 000 € | \u0426\u0435\u043d\u0430\u0442\u0430 \u0435 \u0431\u0435\u0437 \u0414\u0414\u0421 - http://imot.bg/1j173316062109346
+2025-11-04 13:06:32,296 - INFO - New record: \u041a\u042a\u0429\u0410 with price: 1 280 000 € - http://imot.bg/1j173694780867426
+2025-11-04 13:06:32,298 - INFO - New record: \u041a\u042a\u0429\u0410 with price: 1 290 000 € - http://imot.bg/1j175552749928548
+2025-11-04 13:06:32,301 - INFO - New record: \u041a\u042a\u0429\u0410 with price: 1 290 000 € - http://imot.bg/1j176120336808996
+2025-11-04 13:06:32,303 - INFO - New record: \u041a\u042a\u0429\u0410 with price: 1 300 000 € - http://imot.bg/1j173046079722211
+2025-11-04 13:06:32,304 - INFO - New record: \u041a\u042a\u0429\u0410 with price: 1 350 000 € - http://imot.bg/1j172295045855109
+2025-11-04 13:06:32,307 - INFO - New record: \u041a\u042a\u0429\u0410 with price: 1 390 000 € - http://imot.bg/1j172363455277649
+2025-11-04 13:06:32,308 - INFO - New record: \u041a\u042a\u0429\u0410 with price: 1 200 000 € | \u0426\u0435\u043d\u0430\u0442\u0430 \u0435 \u0431\u0435\u0437 \u0414\u0414\u0421 - http://imot.bg/1j170490240200984
+2025-11-04 13:06:32,310 - INFO - New record: \u041a\u042a\u0429\u0410 with price: 1 200 000 € | \u0426\u0435\u043d\u0430\u0442\u0430 \u0435 \u0431\u0435\u0437 \u0414\u0414\u0421 - http://imot.bg/1j173799360233784
+2025-11-04 13:06:32,312 - INFO - New record: \u041a\u042a\u0429\u0410 with price: 1 450 000 € - http://imot.bg/1j169892286929535
+2025-11-04 13:06:32,314 - INFO - New record: \u041a\u042a\u0429\u0410 with price: 1 450 000 € - http://imot.bg/1j161986869633628
+2025-11-04 13:06:32,316 - INFO - New record: \u041a\u042a\u0429\u0410 with price: 1 450 000 € - http://imot.bg/1j174584913685698
+2025-11-04 13:06:32,318 - INFO - New record: \u041a\u042a\u0429\u0410 with price: 1 450 000 € - http://imot.bg/1j174799604123903
+2025-11-04 13:06:32,319 - INFO - New record: \u041a\u042a\u0429\u0410 with price: 1 450 000 € - http://imot.bg/1j167837020495626
+2025-11-04 13:06:32,321 - INFO - New record: \u041a\u042a\u0429\u0410 with price: 1 210 000 € | \u0426\u0435\u043d\u0430\u0442\u0430 \u0435 \u0431\u0435\u0437 \u0414\u0414\u0421 - http://imot.bg/1j169634612102169
+2025-11-04 13:06:32,323 - INFO - New record: \u041a\u042a\u0429\u0410 with price: 1 550 000 € - http://imot.bg/1j173078463563479
+2025-11-04 13:06:32,325 - INFO - New record: \u041a\u042a\u0429\u0410 with price: 1 550 000 € - http://imot.bg/1j176170748800270
+2025-11-04 13:06:32,327 - INFO - New record: \u041a\u042a\u0429\u0410 with price: 1 560 000 € - http://imot.bg/1j176164141269120
+2025-11-04 13:06:32,329 - INFO - New record: \u041a\u042a\u0429\u0410 with price: 1 590 000 € - http://imot.bg/1j173373782374551
+2025-11-04 13:06:32,332 - INFO - New record: \u041a\u042a\u0429\u0410 with price: 1 600 000 € - http://imot.bg/1j174585439042809
+2025-11-04 13:06:32,333 - INFO - New record: \u041a\u042a\u0429\u0410 with price: 1 600 000 € - http://imot.bg/1j174669186836197
+2025-11-04 13:06:32,336 - INFO - New record: \u041a\u042a\u0429\u0410 with price: 1 348 000 € | \u0426\u0435\u043d\u0430\u0442\u0430 \u0435 \u0431\u0435\u0437 \u0414\u0414\u0421 - http://imot.bg/1j175991821307197
+2025-11-04 13:06:32,337 - INFO - New record: \u041a\u042a\u0429\u0410 with price: 1 750 000 € - http://imot.bg/1j175405410624392
+2025-11-04 13:06:32,339 - INFO - New record: \u041a\u042a\u0429\u0410 with price: 1 480 000 € | \u0426\u0435\u043d\u0430\u0442\u0430 \u0435 \u0431\u0435\u0437 \u0414\u0414\u0421 - http://imot.bg/1j176061781553763
+2025-11-04 13:06:32,341 - INFO - New record: \u041a\u042a\u0429\u0410 with price: 1 790 000 € - http://imot.bg/1j173437502203310
+2025-11-04 13:06:32,343 - INFO - New record: \u041a\u042a\u0429\u0410 with price: 1 615 100 € | \u0426\u0435\u043d\u0430\u0442\u0430 \u0435 \u0431\u0435\u0437 \u0414\u0414\u0421 - http://imot.bg/1j167886942861519
+2025-11-04 13:06:32,345 - INFO - New record: \u041a\u042a\u0429\u0410 with price: 1 615 100 € | \u0426\u0435\u043d\u0430\u0442\u0430 \u0435 \u0431\u0435\u0437 \u0414\u0414\u0421 - http://imot.bg/1j174704315803730
+2025-11-04 13:06:32,347 - INFO - New record: \u041a\u042a\u0429\u0410 with price: 1 990 600 € - http://imot.bg/1j176208441644412
+2025-11-04 13:06:32,350 - INFO - New record: \u041a\u042a\u0429\u0410 with price: 2 000 000 € - http://imot.bg/1j173979572370426
+2025-11-04 13:06:32,352 - INFO - New record: \u041a\u042a\u0429\u0410 with price: 1 711 200 € | \u0426\u0435\u043d\u0430\u0442\u0430 \u0435 \u0431\u0435\u0437 \u0414\u0414\u0421 - http://imot.bg/1j170228691952092
+2025-11-04 13:06:32,355 - INFO - New record: \u041a\u042a\u0429\u0410 with price: 2 095 000 € - http://imot.bg/1j170842063572719
+2025-11-04 13:06:32,357 - INFO - New record: \u041a\u042a\u0429\u0410 with price: 2 195 000 € - http://imot.bg/1j174135831445641
+2025-11-04 13:06:32,358 - INFO - New record: \u041a\u042a\u0429\u0410 with price: 2 290 000 € - http://imot.bg/1j172968261386115
+2025-11-04 13:06:32,361 - INFO - New record: \u041a\u042a\u0429\u0410 with price: 2 297 000 € - http://imot.bg/1j171527763068041
+2025-11-04 13:06:32,364 - INFO - New record: \u041a\u042a\u0429\u0410 with price: 2 299 000 € - http://imot.bg/1j117981334619022
+2025-11-04 13:06:32,368 - INFO - New record: \u041a\u042a\u0429\u0410 with price: 2 299 000 € - http://imot.bg/1j174116461841343
+2025-11-04 13:06:32,370 - INFO - New record: \u041a\u042a\u0429\u0410 with price: 2 300 000 € - http://imot.bg/1j170829762471530
+2025-11-04 13:06:32,372 - INFO - New record: \u041a\u042a\u0429\u0410 with price: 2 300 000 € - http://imot.bg/1j171094245777908
+2025-11-04 13:06:32,374 - INFO - New record: \u041a\u042a\u0429\u0410 with price: 2 500 000 € - http://imot.bg/1j166926885107588
+2025-11-04 13:06:32,376 - INFO - New record: \u041a\u042a\u0429\u0410 with price: 3 000 000 € - http://imot.bg/1j173038495640468
+2025-11-04 13:06:32,378 - INFO - New record: \u041a\u042a\u0429\u0410 with price: 3 500 000 € - http://imot.bg/1j173288460194881
+2025-11-04 13:06:33,786 - INFO - New record: \u041a\u042a\u0429\u0410 with price: 3 600 000 € - http://imot.bg/1j171769083258406
+2025-11-04 13:06:33,788 - INFO - New record: \u041a\u042a\u0429\u0410 with price: 3 600 000 € - http://imot.bg/1j176007955499881
+2025-11-04 13:06:33,791 - INFO - New record: \u041a\u042a\u0429\u0410 with price: 3 600 000 € - http://imot.bg/1j164009748130112
+2025-11-04 13:06:33,794 - INFO - New record: \u041a\u042a\u0429\u0410 with price: 5 000 000 € - http://imot.bg/1j176070175331438
+2025-11-04 13:06:33,796 - INFO - New record: \u041a\u042a\u0429\u0410 with price: 5 000 000 € | \u0426\u0435\u043d\u0430\u0442\u0430 \u0435 \u0431\u0435\u0437 \u0414\u0414\u0421 - http://imot.bg/1j176080144931110
+2025-11-04 13:06:33,799 - INFO - New record: \u041a\u042a\u0429\u0410 with price: 6 135 000 € - http://imot.bg/1j159972691584399
+2025-11-04 13:06:33,801 - INFO - New record: \u041a\u042a\u0429\u0410 with price: \u0426\u0435\u043d\u0430 \u043f\u0440\u0438 \u0437\u0430\u043f\u0438\u0442\u0432\u0430\u043d\u0435 - http://imot.bg/1j170533445320218
+2025-11-04 13:06:33,803 - INFO - New record: \u041a\u042a\u0429\u0410 with price: \u0426\u0435\u043d\u0430 \u043f\u0440\u0438 \u0437\u0430\u043f\u0438\u0442\u0432\u0430\u043d\u0435 - http://imot.bg/1j170533440345384
+2025-11-04 13:06:33,806 - INFO - New record: \u041a\u042a\u0429\u0410 with price: \u0426\u0435\u043d\u0430 \u043f\u0440\u0438 \u0437\u0430\u043f\u0438\u0442\u0432\u0430\u043d\u0435 - http://imot.bg/1j171948089806610
+2025-11-04 13:06:33,809 - INFO - New record: \u041a\u042a\u0429\u0410 with price: \u0426\u0435\u043d\u0430 \u043f\u0440\u0438 \u0437\u0430\u043f\u0438\u0442\u0432\u0430\u043d\u0435 - http://imot.bg/1j173434321968617
+2025-11-04 13:06:33,811 - INFO - New record: \u041a\u042a\u0429\u0410 with price: \u0426\u0435\u043d\u0430 \u043f\u0440\u0438 \u0437\u0430\u043f\u0438\u0442\u0432\u0430\u043d\u0435 - http://imot.bg/1j175631701950602
+2025-11-04 13:06:33,813 - INFO - New record: \u041a\u042a\u0429\u0410 with price: \u0426\u0435\u043d\u0430 \u043f\u0440\u0438 \u0437\u0430\u043f\u0438\u0442\u0432\u0430\u043d\u0435 - http://imot.bg/1j175647840705328
+2025-11-04 13:06:33,814 - INFO - New record: \u041a\u042a\u0429\u0410 with price: 124 000 € - http://imot.bg/1j174246280454447
+2025-11-04 13:06:33,817 - INFO - New record: \u041a\u042a\u0429\u0410 with price: 340 000 € - http://imot.bg/1j175291564968032
+2025-11-04 13:06:33,820 - INFO - New record: \u041a\u042a\u0429\u0410 with price: 3 200 000 € - http://imot.bg/1j175387597564961
+2025-11-04 13:06:33,823 - INFO - New record: \u041a\u042a\u0429\u0410 with price: 129 999 € - http://imot.bg/1j175386977678260
+2025-11-04 13:06:33,828 - INFO - New record: \u041a\u042a\u0429\u0410 with price: 130 000 € - http://imot.bg/1j175387247697857
+2025-11-04 13:06:33,830 - INFO - New record: \u041a\u042a\u0429\u0410 with price: 380 000 € - http://imot.bg/1j173935456227293
+2025-11-04 13:06:33,834 - INFO - New record: \u041a\u042a\u0429\u0410 with price: 380 000 € - http://imot.bg/1j171274265936846
+2025-11-04 13:06:33,835 - INFO - New record: \u041a\u042a\u0429\u0410 with price: 424 000 € - http://imot.bg/1j174369178554505
+2025-11-04 13:06:33,838 - INFO - New record: \u041a\u042a\u0429\u0410 with price: 450 000 € - http://imot.bg/1j176175151005256
+2025-11-04 13:06:33,841 - INFO - New record: \u041a\u042a\u0429\u0410 with price: 450 000 € - http://imot.bg/1j175346020445735
+2025-11-04 13:06:33,843 - INFO - New record: \u041a\u042a\u0429\u0410 with price: 459 800 € - http://imot.bg/1j175248287458331
+2025-11-04 13:06:33,846 - INFO - New record: \u041a\u042a\u0429\u0410 with price: 460 000 € - http://imot.bg/1j175404726031054
+2025-11-04 13:06:33,849 - INFO - New record: \u041a\u042a\u0429\u0410 with price: 499 999 € - http://imot.bg/1j173952503946434
+2025-11-04 13:06:33,850 - INFO - New record: \u041a\u042a\u0429\u0410 with price: 600 000 € - http://imot.bg/1j173391815008330
+2025-11-04 13:06:33,854 - INFO - New record: \u041a\u042a\u0429\u0410 with price: 508 000 € | \u0426\u0435\u043d\u0430\u0442\u0430 \u0435 \u0431\u0435\u0437 \u0414\u0414\u0421 - http://imot.bg/1j173884839173819
+2025-11-04 13:06:33,856 - INFO - New record: \u041a\u042a\u0429\u0410 with price: 650 000 € - http://imot.bg/1j175579563763276
+2025-11-04 13:06:33,859 - INFO - New record: \u041a\u042a\u0429\u0410 with price: 670 000 € - http://imot.bg/1j175265952679943
+2025-11-04 13:06:33,861 - INFO - New record: \u041a\u042a\u0429\u0410 with price: 580 000 € | \u0426\u0435\u043d\u0430\u0442\u0430 \u0435 \u0431\u0435\u0437 \u0414\u0414\u0421 - http://imot.bg/1j175871044118761
+2025-11-04 13:06:33,863 - INFO - New record: \u041a\u042a\u0429\u0410 with price: 699 900 € - http://imot.bg/1j176035766862196
+2025-11-04 13:06:33,865 - INFO - New record: \u041a\u042a\u0429\u0410 with price: 749 999 € - http://imot.bg/1j175636750608985
+2025-11-04 13:06:33,869 - INFO - New record: \u041a\u042a\u0429\u0410 with price: 750 000 € - http://imot.bg/1j174826901568697
+2025-11-04 13:06:33,873 - INFO - New record: \u041a\u042a\u0429\u0410 with price: 799 999 € - http://imot.bg/1j175636800938728
+2025-11-04 13:06:33,874 - INFO - New record: \u041a\u042a\u0429\u0410 with price: 850 000 € - http://imot.bg/1j175922434509463
+2025-11-04 13:06:33,877 - INFO - New record: \u041a\u042a\u0429\u0410 with price: 880 000 € - http://imot.bg/1j172051010046260
+2025-11-04 13:06:33,882 - INFO - New record: \u041a\u042a\u0429\u0410 with price: 900 000 € - http://imot.bg/1j176068999699357
+2025-11-04 13:06:33,886 - INFO - New record: \u041a\u042a\u0429\u0410 with price: 929 999 € - http://imot.bg/1j171076569325511
+2025-11-04 13:06:33,888 - INFO - New record: \u041a\u042a\u0429\u0410 with price: 1 030 000 € - http://imot.bg/1j175576713903233
+2025-11-04 13:06:33,890 - INFO - New record: \u041a\u042a\u0429\u0410 with price: 1 100 000 € - http://imot.bg/1j171471738486407
+2025-11-04 13:06:35,222 - INFO - New record: \u041a\u042a\u0429\u0410 with price: 930 000 € | \u0426\u0435\u043d\u0430\u0442\u0430 \u0435 \u0431\u0435\u0437 \u0414\u0414\u0421 - http://imot.bg/1j173374288089348
+2025-11-04 13:06:35,225 - INFO - New record: \u041a\u042a\u0429\u0410 with price: 1 200 000 € - http://imot.bg/1j173462341067509
+2025-11-04 13:06:35,227 - INFO - New record: \u041a\u042a\u0429\u0410 with price: 1 000 000 € | \u0426\u0435\u043d\u0430\u0442\u0430 \u0435 \u0431\u0435\u0437 \u0414\u0414\u0421 - http://imot.bg/1j175258322738443
+2025-11-04 13:06:35,233 - INFO - New record: \u041a\u042a\u0429\u0410 with price: 1 200 000 € - http://imot.bg/1j175257274707049
+2025-11-04 13:06:35,235 - INFO - New record: \u041a\u042a\u0429\u0410 with price: 1 200 000 € - http://imot.bg/1j173755417908016
+2025-11-04 13:06:35,238 - INFO - New record: \u041a\u042a\u0429\u0410 with price: 1 250 000 € - http://imot.bg/1j176175348675029
+2025-11-04 13:06:35,241 - INFO - New record: \u041a\u042a\u0429\u0410 with price: 1 250 000 € - http://imot.bg/1j175377518811591
+2025-11-04 13:06:35,242 - INFO - New record: \u041a\u042a\u0429\u0410 with price: 1 250 000 € - http://imot.bg/1j175049821339634
+2025-11-04 13:06:35,244 - INFO - New record: \u041a\u042a\u0429\u0410 with price: 1 299 200 € - http://imot.bg/1j175672228358203
+2025-11-04 13:06:35,250 - INFO - New record: \u041a\u042a\u0429\u0410 with price: 1 299 200 € - http://imot.bg/1j175950748787888
+2025-11-04 13:06:35,251 - INFO - New record: \u041a\u042a\u0429\u0410 with price: 1 299 200 € - http://imot.bg/1j176191494635143
+2025-11-04 13:06:35,255 - INFO - New record: \u041a\u042a\u0429\u0410 with price: 1 299 200 € - http://imot.bg/1j176174347112505
+2025-11-04 13:06:35,258 - INFO - New record: \u041a\u042a\u0429\u0410 with price: 1 299 200 € - http://imot.bg/1j175916100226444
+2025-11-04 13:06:35,260 - INFO - New record: \u041a\u042a\u0429\u0410 with price: 1 299 200 € - http://imot.bg/1j175672445124841
+2025-11-04 13:06:35,262 - INFO - New record: \u041a\u042a\u0429\u0410 with price: 1 299 200 € - http://imot.bg/1j176043988094765
+2025-11-04 13:06:35,264 - INFO - New record: \u041a\u042a\u0429\u0410 with price: 1 299 200 € - http://imot.bg/1j175492114043734
+2025-11-04 13:06:35,266 - INFO - New record: \u041a\u042a\u0429\u0410 with price: 1 300 000 € - http://imot.bg/1j172957962532292
+2025-11-04 13:06:35,269 - INFO - New record: \u041a\u042a\u0429\u0410 with price: 1 300 000 € - http://imot.bg/1j173735707727789
+2025-11-04 13:06:35,270 - INFO - New record: \u041a\u042a\u0429\u0410 with price: 1 140 000 € | \u0426\u0435\u043d\u0430\u0442\u0430 \u0435 \u0431\u0435\u0437 \u0414\u0414\u0421 - http://imot.bg/1j174730477311432
+2025-11-04 13:06:35,274 - INFO - New record: \u041a\u042a\u0429\u0410 with price: 1 370 000 € - http://imot.bg/1j175136593733381
+2025-11-04 13:06:35,276 - INFO - New record: \u041a\u042a\u0429\u0410 with price: 1 200 000 € | \u0426\u0435\u043d\u0430\u0442\u0430 \u0435 \u0431\u0435\u0437 \u0414\u0414\u0421 - http://imot.bg/1j175459759599910
+2025-11-04 13:06:35,278 - INFO - New record: \u041a\u042a\u0429\u0410 with price: 1 200 000 € | \u0426\u0435\u043d\u0430\u0442\u0430 \u0435 \u0431\u0435\u0437 \u0414\u0414\u0421 - http://imot.bg/1j174728373292388
+2025-11-04 13:06:35,282 - INFO - New record: \u041a\u042a\u0429\u0410 with price: 1 200 000 € | \u0426\u0435\u043d\u0430\u0442\u0430 \u0435 \u0431\u0435\u0437 \u0414\u0414\u0421 - http://imot.bg/1j174906884133485
+2025-11-04 13:06:35,285 - INFO - New record: \u041a\u042a\u0429\u0410 with price: 1 200 000 € | \u0426\u0435\u043d\u0430\u0442\u0430 \u0435 \u0431\u0435\u0437 \u0414\u0414\u0421 - http://imot.bg/1j176059953071319
+2025-11-04 13:06:35,288 - INFO - New record: \u041a\u042a\u0429\u0410 with price: 1 499 950 € - http://imot.bg/1j172822232610327
+2025-11-04 13:06:35,290 - INFO - New record: \u041a\u042a\u0429\u0410 with price: 1 500 000 € - http://imot.bg/1j170739360277346
+2025-11-04 13:06:35,292 - INFO - New record: \u041a\u042a\u0429\u0410 with price: 1 558 000 € - http://imot.bg/1j171818637056471
+2025-11-04 13:06:35,295 - INFO - New record: \u041a\u042a\u0429\u0410 with price: 1 300 000 € | \u0426\u0435\u043d\u0430\u0442\u0430 \u0435 \u0431\u0435\u0437 \u0414\u0414\u0421 - http://imot.bg/1j174906889364781
+2025-11-04 13:06:35,298 - INFO - New record: \u041a\u042a\u0429\u0410 with price: 1 313 424 € | \u0426\u0435\u043d\u0430\u0442\u0430 \u0435 \u0431\u0435\u0437 \u0414\u0414\u0421 - http://imot.bg/1j175508052200393
+2025-11-04 13:06:35,300 - INFO - New record: \u041a\u042a\u0429\u0410 with price: 1 350 000 € | \u0426\u0435\u043d\u0430\u0442\u0430 \u0435 \u0431\u0435\u0437 \u0414\u0414\u0421 - http://imot.bg/1j175611896207007
+2025-11-04 13:06:35,303 - INFO - New record: \u041a\u042a\u0429\u0410 with price: 1 700 000 € - http://imot.bg/1j175749481234262
+2025-11-04 13:06:35,305 - INFO - New record: \u041a\u042a\u0429\u0410 with price: 1 500 000 € | \u0426\u0435\u043d\u0430\u0442\u0430 \u0435 \u0431\u0435\u0437 \u0414\u0414\u0421 - http://imot.bg/1j176102885051943
+2025-11-04 13:06:35,312 - INFO - New record: \u041a\u042a\u0429\u0410 with price: 1 500 000 € | \u0426\u0435\u043d\u0430\u0442\u0430 \u0435 \u0431\u0435\u0437 \u0414\u0414\u0421 - http://imot.bg/1j176059959159346
+2025-11-04 13:06:35,314 - INFO - New record: \u041a\u042a\u0429\u0410 with price: 1 500 000 € | \u0426\u0435\u043d\u0430\u0442\u0430 \u0435 \u0431\u0435\u0437 \u0414\u0414\u0421 - http://imot.bg/1j172987560458201
+2025-11-04 13:06:35,316 - INFO - New record: \u041a\u042a\u0429\u0410 with price: \u0426\u0435\u043d\u0430 \u043f\u0440\u0438 \u0437\u0430\u043f\u0438\u0442\u0432\u0430\u043d\u0435 - http://imot.bg/1j176003888293716

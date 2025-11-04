@@ -9,7 +9,17 @@ a = Analysis(
     datas=[
         ('data', 'data'),  # Include the data directory
     ],
-    hiddenimports=['tkinter', 'requests', 'bs4', 'urllib3', 'csv', 'logging', 'threading', 'webbrowser'],
+    hiddenimports=[
+        'tkinter',
+        'requests',
+        'bs4',
+        'urllib3',
+        'csv',
+        'logging',
+        'threading',
+        'webbrowser',
+        're'
+    ],
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],

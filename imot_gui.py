@@ -59,6 +59,9 @@ class ImotScraperGUI:
         if not os.path.exists(self.data_dir):
             os.makedirs(self.data_dir)
         
+        # Add window close handler
+        self.root.protocol("WM_DELETE_WINDOW", self.on_closing)
+
         self.setup_gui()
         
     def setup_gui(self):
@@ -170,20 +173,31 @@ class ImotScraperGUI:
             messagebox.showerror("Error", f"File not found: {filepath}")
             return
             
-        # Create a new window
+        # Create a new window with proper scaling
         view_window = tk.Toplevel(self.root)
         view_window.title(f"Viewing {filename}")
         view_window.geometry("800x600")
+        view_window.minsize(600, 400)  # Set minimum size
+        
+        # Make the window resizable
+        view_window.rowconfigure(0, weight=1)
+        view_window.columnconfigure(0, weight=1)
 
-        # Create a treeview
-        tree = ttk.Treeview(view_window)
-        tree.pack(fill=tk.BOTH, expand=True)
+        # Create main frame
+        main_frame = ttk.Frame(view_window)
+        main_frame.grid(row=0, column=0, sticky='nsew', padx=5, pady=5)
+        main_frame.rowconfigure(0, weight=1)
+        main_frame.columnconfigure(0, weight=1)
+
+        # Create a treeview with scrollbars in the frame
+        tree = ttk.Treeview(main_frame)
+        tree.grid(row=0, column=0, sticky='nsew')
 
         # Add scrollbars
-        vsb = ttk.Scrollbar(view_window, orient="vertical", command=tree.yview)
-        vsb.pack(side=tk.RIGHT, fill=tk.Y)
-        hsb = ttk.Scrollbar(view_window, orient="horizontal", command=tree.xview)
-        hsb.pack(side=tk.BOTTOM, fill=tk.X)
+        vsb = ttk.Scrollbar(main_frame, orient="vertical", command=tree.yview)
+        vsb.grid(row=0, column=1, sticky='ns')
+        hsb = ttk.Scrollbar(main_frame, orient="horizontal", command=tree.xview)
+        hsb.grid(row=1, column=0, sticky='ew')
         tree.configure(yscrollcommand=vsb.set, xscrollcommand=hsb.set)
 
         try:
@@ -250,7 +264,8 @@ class ImotScraperGUI:
     
     def start_scraping(self):
         self.log_text.delete(1.0, tk.END)
-        threading.Thread(target=self.run_scraper, daemon=True).start()
+        self.scraper_thread = threading.Thread(target=self.run_scraper, daemon=True)
+        self.scraper_thread.start()
     
     def run_scraper(self):
         try:
@@ -262,6 +277,17 @@ class ImotScraperGUI:
             self.root.after(0, lambda: update_log("\nScraping completed successfully!\n"))
         except Exception as e:
             self.root.after(0, lambda: update_log(f"\nError occurred: {str(e)}\n"))
+
+    def on_closing(self):
+        """Handle window closing event"""
+        if self.scraper_thread and self.scraper_thread.is_alive():
+            if messagebox.askokcancel("Quit", "Scraping is in progress. Do you want to stop it and quit?"):
+                # Set a flag to stop scraping (you'll need to implement this in your scraper)
+                logging.info("Stopping scraper...")
+                self.root.quit()
+        else:
+            self.root.quit()
+            self.root.destroy()
 
 def main():
     root = tk.Tk()
