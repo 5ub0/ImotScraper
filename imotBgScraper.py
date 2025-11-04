@@ -8,9 +8,20 @@ from requests.packages.urllib3.util.retry import Retry
 import logging
 from time import sleep
 
+
+CONFIG = {
+    'BASE_URL': 'http://imot.bg',
+    'HEADERS': ["Title", "Price", "oldValue", "Link", "RecordId"],
+    'REQUEST_DELAY': 1,
+    'DATA_DIR': 'data'  # Add this line
+}
+
+if not os.path.exists(CONFIG['DATA_DIR']):
+    os.makedirs(CONFIG['DATA_DIR'])
+
 def setup_logging(use_file=True):
     """Setup logging with optional file output"""
-    log_file = 'scraper.log'
+    log_file = 'data/scraper.log'
     if use_file:
         if os.path.exists(log_file):
             try:
@@ -31,16 +42,6 @@ def setup_logging(use_file=True):
 
 # Add this line after the function definition (around line 25):
 setup_logging()
-
-CONFIG = {
-    'BASE_URL': 'http://imot.bg',
-    'HEADERS': ["Title", "Price", "oldValue", "Link", "RecordId"],
-    'REQUEST_DELAY': 1,
-    'DATA_DIR': 'data'  # Add this line
-}
-
-if not os.path.exists(CONFIG['DATA_DIR']):
-    os.makedirs(CONFIG['DATA_DIR'])
 
 def create_session() -> requests.Session:
     """Create a session with retry logic"""
@@ -205,7 +206,7 @@ def main():
                     reference_value = reference_data[record_id_key]
                     if price_text != reference_value:
                         new_records.append([title, price_text, reference_value, link_element, record_id_key])
-                        logging.info(f"Changed price: {record_id_key} from {reference_value} to {price_text}")
+                        logging.info(f"Changed price: {record_id_key} from {reference_value} to {price_text} - {link_element}")
                     new_value = reference_value if price_text != reference_value else ""
                     del reference_data[record_id_key]
                 else:

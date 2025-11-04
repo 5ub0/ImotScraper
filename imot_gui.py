@@ -241,10 +241,42 @@ class ImotScraperGUI:
     
     def remove_url(self):
         selected_items = self.tree.selection()
+        if not selected_items:
+            return  # Exit if nothing is selected
+
         for item in selected_items:
+            # 1. Get the URL and Filename values from the selected item
+            values = self.tree.item(item)['values']
+            if len(values) < 2:
+                continue # Skip if data is incomplete
+                
+            # Filename is at index 1 in the values list
+            filename_to_delete = values[1]
+            filepath = os.path.join(self.data_dir, filename_to_delete)
+            
+            # 2. Delete the associated file from the 'data' directory
+            if os.path.exists(filepath):
+                try:
+                    os.remove(filepath)
+                    logging.info(f"Successfully deleted data file: {filepath}")
+                except OSError as e:
+                    logging.error(f"Error deleting file {filepath}: {e}")
+
+            filepath_2 = os.path.join(self.data_dir, 'NewRecords_'+filename_to_delete)
+            
+            # 2. Delete the associated file from the 'data' directory
+            if os.path.exists(filepath_2):
+                try:
+                    os.remove(filepath_2)
+                    logging.info(f"Successfully deleted data file: {filepath_2}")
+                except OSError as e:
+                    logging.error(f"Error deleting file {filepath_2}: {e}")
+            
+            # 3. Delete the item from the Treeview (GUI)
             self.tree.delete(item)
-        if selected_items:
-            self.save_urls_to_csv()
+            
+        # 4. Save the updated list of URLs to inputURLS.csv
+        self.save_urls_to_csv()
     
     def load_existing_urls(self):
         input_file = os.path.join(self.data_dir, 'inputURLS.csv')
@@ -280,14 +312,8 @@ class ImotScraperGUI:
 
     def on_closing(self):
         """Handle window closing event"""
-        if self.scraper_thread and self.scraper_thread.is_alive():
-            if messagebox.askokcancel("Quit", "Scraping is in progress. Do you want to stop it and quit?"):
-                # Set a flag to stop scraping (you'll need to implement this in your scraper)
-                logging.info("Stopping scraper...")
-                self.root.quit()
-        else:
-            self.root.quit()
-            self.root.destroy()
+        self.root.quit()
+        self.root.destroy()
 
 def main():
     root = tk.Tk()
