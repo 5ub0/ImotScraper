@@ -1,2 +1,0 @@
-T-01 - After the initial implementation was working correctly for some time the site changed their selectors
-and front end styling I had to implement adjustments so the script continue work
