@@ -1,0 +1,4 @@
+data/
+dist/data/
+build/
+__pycache__/

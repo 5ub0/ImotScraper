@@ -8,20 +8,26 @@ from requests.packages.urllib3.util.retry import Retry
 import logging
 from time import sleep
 
-def setup_logging():
-    """Setup logging with file cleanup"""
+def setup_logging(use_file=True):
+    """Setup logging with optional file output"""
     log_file = 'scraper.log'
-    if os.path.exists(log_file):
-        try:
-            os.remove(log_file)
-        except OSError as e:
-            print(f"Error clearing log file: {e}")
-    
-    logging.basicConfig(
-        level=logging.INFO,
-        format='%(asctime)s - %(levelname)s - %(message)s',
-        filename=log_file
-    )
+    if use_file:
+        if os.path.exists(log_file):
+            try:
+                os.remove(log_file)
+            except OSError as e:
+                print(f"Error clearing log file: {e}")
+        
+        logging.basicConfig(
+            level=logging.INFO,
+            format='%(asctime)s - %(levelname)s - %(message)s',
+            filename=log_file
+        )
+    else:
+        logging.basicConfig(
+            level=logging.INFO,
+            format='%(asctime)s - %(levelname)s - %(message)s'
+        )
 
 # Add this line after the function definition (around line 25):
 setup_logging()
@@ -29,8 +35,12 @@ setup_logging()
 CONFIG = {
     'BASE_URL': 'http://imot.bg',
     'HEADERS': ["Title", "Price", "oldValue", "Link", "RecordId"],
-    'REQUEST_DELAY': 1
+    'REQUEST_DELAY': 1,
+    'DATA_DIR': 'data'  # Add this line
 }
+
+if not os.path.exists(CONFIG['DATA_DIR']):
+    os.makedirs(CONFIG['DATA_DIR'])
 
 def create_session() -> requests.Session:
     """Create a session with retry logic"""
@@ -44,7 +54,7 @@ def create_session() -> requests.Session:
     session.mount('https://', HTTPAdapter(max_retries=retries))
     return session
 
-def read_input_urls(file_path: str = "inputURLS.csv") -> List[Tuple[str, str]]:
+def read_input_urls(file_path: str = "data/inputURLS.csv") -> List[Tuple[str, str]]:
     """Read URLs and filenames from input CSV"""
     urls = []
     try:
@@ -61,12 +71,14 @@ def read_reference_data(filename: str) -> Tuple[Dict[str, str], set]:
     """Read existing data for comparison"""
     reference_data = {}
     processed_keys = set()
-    
-    if not os.path.isfile(filename):
+
+    filepath = os.path.join(CONFIG['DATA_DIR'], filename)  # Add this line
+
+    if not os.path.isfile(filepath):
         return reference_data, processed_keys
 
     try:
-        with open(filename, "r", encoding="utf-8") as csvfile:
+        with open(filepath, "r", encoding="utf-8") as csvfile:
             reader = csv.reader(csvfile)
             header = next(reader, None)
             if header is not None and len(header) == 5 and header[4] == "RecordId":
@@ -140,7 +152,8 @@ def process_page(session: requests.Session, url: str, page: int) -> Optional[Bea
 def write_output(filename: str, records: List[List[str]], headers: List[str]):
     """Write records to output file"""
     try:
-        with open(filename, "w", newline="", encoding="utf-8") as csvfile:
+        filepath = os.path.join(CONFIG['DATA_DIR'], filename)
+        with open(filepath, "w", newline="", encoding="utf-8") as csvfile:
             writer = csv.writer(csvfile)
             writer.writerow(headers)
             writer.writerows(records)
@@ -186,7 +199,7 @@ def main():
                 else:
                     new_value = "new"
                     new_records.append([title, price_text, new_value, link_element, record_id_key])
-                    logging.info(f"New record: {record_id_key}")
+                    logging.info(f"New record: {title} with price: {price_text} - {link_element}")
 
                 all_records.append([title, price_text, new_value, link_element, record_id_key])
             
@@ -208,9 +221,12 @@ def main():
             write_output(new_records_filename, new_records, CONFIG['HEADERS'])
         else:
             try:
-                if os.path.isfile(new_records_filename):
-                    os.remove(new_records_filename)
-                logging.info(f"No new records for: {output_filename}")
+                filepath = os.path.join(CONFIG['DATA_DIR'], new_records_filename)  # Add this line
+                if os.path.isfile(filepath):  # Change new_records_filename to filepath
+                    os.remove(filepath)
+                # Modified message to include record count
+                total_records = len(all_records)
+                logging.info(f"No new records for: {output_filename} among {total_records} records")
             except OSError:
                 pass
 

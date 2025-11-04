@@ -1,9 +1,0 @@
-2025-11-04 10:18:41,906 - INFO - Successfully read 4 URLs from inputURLS.csv
-2025-11-04 10:18:41,906 - INFO - Processing: housesGB.csv
-2025-11-04 10:18:44,648 - INFO - No new records for: housesGB.csv
-2025-11-04 10:18:44,648 - INFO - Processing: housesDRG.csv
-2025-11-04 10:18:51,120 - INFO - No new records for: housesDRG.csv
-2025-11-04 10:18:51,121 - INFO - Processing: housesBoqna.csv
-2025-11-04 10:18:56,316 - INFO - No new records for: housesBoqna.csv
-2025-11-04 10:18:56,316 - INFO - Processing: housesManLiv.csv
-2025-11-04 10:18:57,596 - INFO - No new records for: housesManLiv.csv
