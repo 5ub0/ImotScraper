@@ -4,6 +4,7 @@ import smtplib
 import logging
 import csv
 import os
+import re
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from typing import List, Dict
@@ -12,7 +13,7 @@ from typing import List, Dict
 NEW_LINE = '\n'
 REPORT_HEADER = "Hello," + NEW_LINE*2 + "Here are the results for your tracked property searches:" + NEW_LINE
 REPORT_FOOTER = NEW_LINE + "Have a great day."
-ADMIN_EMAIL = 'viktor.pavlov92@gmail.com' # Fixed Admin Email
+ADMIN_EMAIL = os.environ.get("IMOT_ADMIN_EMAIL", 'viktor.pavlov92@gmail.com') # Use env var or default admin email
 FAILURE_REPORT_CONTENT = (
     "--- CRITICAL SCRAPER FAILURE ---\n\n"
     f"The scheduled scraping job failed to complete successfully. "
@@ -27,21 +28,26 @@ class ReportMailer:
     """
     def __init__(self):
         """
-        Initializes the mailer with hardcoded server credentials.
+        Initializes the mailer by reading SMTP credentials from environment variables 
+        and storing them as instance attributes.
         """
-        # --- Hardcoded Credentials ---
-        self.smtp_server = 'smtp.gmail.com'
-        self.smtp_port = 587
-        self.smtp_user = 'viktor.pavlov92@gmail.com'
-        self.smtp_pass = 'luzd ctfm gwfm gibl'
-        # -----------------------------
+        
+        # --- FIX 1: Assign credentials as instance attributes (self.xxx) ---
+        self.smtp_user = os.environ.get("IMOT_SENDER_EMAIL")
+        self.smtp_pass = os.environ.get("IMOT_SENDER_PASSWORD")
+        self.smtp_server = os.environ.get("IMOT_SMTP_SERVER", "smtp.gmail.com") 
+        self.smtp_port = int(os.environ.get("IMOT_SMTP_PORT", 587))
         
         self.is_configured = bool(self.smtp_server and self.smtp_port and self.smtp_user and self.smtp_pass)
+        
+        if not self.smtp_user or not self.smtp_pass:
+            # Note: This will not raise an error, but logging the issue is better for the scheduler
+            logging.warning("Email credentials not set (IMOT_SENDER_EMAIL/PASSWORD). Reporting is disabled.")
         
         if not self.is_configured:
             logging.warning("ReportMailer initialized with incomplete credentials. Will not be able to send emails.")
 
-    
+    # --- FIX 2: Restore and correctly implement the desired method ---
     def send_reports_or_failure_notification(self, success: bool, data_dir="data", input_csv="data/inputURLS.csv"):
         """
         Sends emails based on the scraper's run status.
@@ -68,17 +74,19 @@ class ReportMailer:
         new_records_file = f"NewRecords_{filename}"
         filepath = os.path.join(data_dir, new_records_file)
         
-        summary = [f"  - **{search_name}:**"]
+        # Use simple text formatting for plain text body
+        summary = [f" - **{search_name}:**"]
         
         if not os.path.exists(filepath):
             # Case 1: No new records found
-            summary.append(f"    - No new records or price changes found.")
+            summary.append(f"    - No new records or price changes found.")
             return NEW_LINE.join(summary)
             
         # Case 2: New records found, read and format the data
         try:
             with open(filepath, 'r', encoding='utf-8') as f:
                 reader = csv.DictReader(f)
+                records_found = 0
                 
                 for row in reader:
                     title = row.get('Title', 'Property')
@@ -88,14 +96,18 @@ class ReportMailer:
                     
                     if old_value.lower() == 'new':
                         # New add format
-                        summary.append(f"    - **New Add:** {title} price: {price} ({link})")
+                        summary.append(f"    - New Add: {title} price: {price} ({link})")
                     else:
                         # Price update format
-                        summary.append(f"    - **Price Update:** {title} price updated to: {price} from: {old_value} ({link})")
-                        
+                        summary.append(f"    - Price Update: {title} price updated to: {price} from: {old_value} ({link})")
+                    records_found += 1
+
+                if records_found == 0:
+                     summary.append(f"    - No new records or price changes found.")
+                         
         except Exception as e:
             logging.error(f"Error reading report file {filepath}: {e}")
-            summary.append(f"    - Error generating report details.")
+            summary.append(f"    - Error generating report details.")
 
         return NEW_LINE.join(summary)
 
@@ -113,7 +125,6 @@ class ReportMailer:
                 reader = csv.DictReader(f)
                 for row in reader:
                     filename = row.get('FileName')
-                    # Handle both 'Send to Emails' and 'Email' headers
                     emails_to_send_str = row.get('Send to Emails') or row.get('Email') 
                     
                     if not filename or not emails_to_send_str: continue
@@ -123,10 +134,12 @@ class ReportMailer:
                     recipients = [email.strip() for email in emails_to_send_str.split(separator) if email.strip()]
                     
                     for email in recipients:
-                        if email:
+                        if re.match(r"[^@]+@[^@]+\.[^@]+", email): # Basic validation
                             if email not in recipient_searches:
                                 recipient_searches[email] = []
                             recipient_searches[email].append(filename)
+                        else:
+                            logging.warning(f"Skipping invalid email: {email}")
             
         except FileNotFoundError:
             logging.error(f"Could not find input file: {input_csv}")
@@ -136,7 +149,7 @@ class ReportMailer:
             return
 
         if not recipient_searches:
-             logging.warning("No email recipients found. Skipping email send.")
+             logging.warning("No valid email recipients found. Skipping email send.")
              return
              
         # --- 2. Generate and Send Report for Each Unique Recipient ---

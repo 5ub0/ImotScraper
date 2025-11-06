@@ -12,9 +12,10 @@ import time
 from imotBgScraper import main as scraper_main_job 
 from email_service import ReportMailer
 from scheduler_service import ScraperScheduler 
+from dotenv import load_dotenv
 
+load_dotenv()
 # --- CustomText and TextHandler classes ---
-
 class CustomText(scrolledtext.ScrolledText):
     """A scrolled text widget subclassed to handle logging and clickable URLs."""
     def __init__(self, *args, **kwargs):
