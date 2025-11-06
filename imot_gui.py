@@ -8,28 +8,35 @@ import webbrowser
 import os
 import re
 import time
-from imotBgScraper import main as scraper_main_job
+# Assuming these imports point to your other necessary modules
+from imotBgScraper import main as scraper_main_job 
 from email_service import ReportMailer
-from scheduler_service import ScraperScheduler
+from scheduler_service import ScraperScheduler 
 
-# --- CustomText and TextHandler classes remain unchanged ---
+# --- CustomText and TextHandler classes ---
+
 class CustomText(scrolledtext.ScrolledText):
+    """A scrolled text widget subclassed to handle logging and clickable URLs."""
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.tag_config("url", foreground="blue", underline=1)
         self.bind("<Button-1>", self._click)
         
     def _click(self, event):
+        """Opens a URL in a browser if clicked within the widget."""
         for tag in self.tag_names("@%d,%d" % (event.x, event.y)):
             if tag == "url":
                 start = "@%d,%d" % (event.x, event.y)
-                url = self.get(f"{start} linestart", f"{start} lineend")
-                match = re.search(r'http[s]?://(?:[a-zA-Z]|[0-9]|[$-_@.&+]|[!*\\(\\),]|(?:%[0-9a-fA-F][0-9a-fA-F]))+', url)
+                # Get the entire line to reliably extract the URL
+                line_content = self.get(f"{start} linestart", f"{start} lineend")
+                # Simple regex to find the URL
+                match = re.search(r'http[s]?://(?:[a-zA-Z]|[0-9]|[$-_@.&+]|[!*\\(\\),]|(?:%[0-9-fA-F][0-9-fA-F]))+', line_content)
                 if match:
                     webbrowser.open(match.group(0))
                 break
 
 class TextHandler(logging.Handler):
+    """A logging handler to redirect Python logs to the CustomText widget."""
     def __init__(self, text_widget):
         logging.Handler.__init__(self)
         self.text_widget = text_widget
@@ -38,12 +45,14 @@ class TextHandler(logging.Handler):
         msg = self.format(record) + '\n'
         self.text_widget.insert(tk.END, msg)
         
+        # Simple logic to highlight and tag URLs
         if 'http' in msg:
             line_start = self.text_widget.get("end-2c linestart", "end-2c lineend")
-            start_idx = f"end-2c linestart+{line_start.find('http')}c"
-            url_end = len(line_start)
-            end_idx = f"end-2c linestart+{url_end}c"
-            self.text_widget.tag_add("url", start_idx, end_idx)
+            url_start_pos = line_start.find('http')
+            if url_start_pos != -1:
+                start_idx = f"end-2c linestart+{url_start_pos}c"
+                end_idx = f"end-2c linestart+{len(line_start)}c"
+                self.text_widget.tag_add("url", start_idx, end_idx)
         
         self.text_widget.see(tk.END)
 
@@ -64,14 +73,24 @@ class ImotScraperGUI:
         self.report_mailer = ReportMailer()
         self.scheduler = ScraperScheduler(report_mailer=self.report_mailer)
         self.scheduler_running = False
-        
-        # Instance variable to hold the button frame for reliable refreshing
         self.file_view_button_frame = None 
 
         self.root.protocol("WM_DELETE_WINDOW", self.on_closing)
 
         self.setup_gui()
         
+    def setup_logging(self):
+        """Configures Python's logging to route messages to the GUI's log text widget."""
+        handler = TextHandler(self.log_text)
+        formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
+        handler.setFormatter(formatter)
+        
+        root_logger = logging.getLogger()
+        if not any(isinstance(h, TextHandler) for h in root_logger.handlers):
+            root_logger.addHandler(handler)
+        
+        root_logger.setLevel(logging.INFO)
+
     def setup_gui(self):
         
         # -----------------------------------------------
@@ -90,15 +109,13 @@ class ImotScraperGUI:
         self.schedule_status_label = ttk.Label(schedule_frame, text="Status: STOPPED", foreground="red")
         self.schedule_status_label.grid(row=0, column=2, padx=20, pady=5, sticky='W')
         
-        # Control Buttons
-        self.start_schedule_btn = ttk.Button(schedule_frame, text="Start Daily Schedule", command=self.start_schedule)
-        self.start_schedule_btn.grid(row=0, column=3, padx=5, pady=5, sticky='E')
-        
-        self.stop_schedule_btn = ttk.Button(schedule_frame, text="Stop Schedule", command=self.stop_schedule, state=tk.DISABLED)
-        self.stop_schedule_btn.grid(row=0, column=4, padx=5, pady=5, sticky='E')
-        
-        self.check_status_btn = ttk.Button(schedule_frame, text="Check Status", command=self.check_schedule_status_log)
-        self.check_status_btn.grid(row=0, column=5, padx=5, pady=5, sticky='E')
+        # Control Buttons (Single Toggle Button)
+        self.schedule_btn = ttk.Button(
+            schedule_frame, 
+            text="Start Daily Schedule", 
+            command=self.toggle_schedule # New command to handle start/stop logic
+        )
+        self.schedule_btn.grid(row=0, column=3, padx=5, pady=5, sticky='E')
         
         schedule_frame.grid_columnconfigure(5, weight=1) 
         # -----------------------------------------------
@@ -149,9 +166,7 @@ class ImotScraperGUI:
         
         # Control buttons
         ttk.Button(control_frame, text="Add New Search", command=lambda: self.show_add_url_dialog(action="create")).pack(side=tk.LEFT, padx=5)
-        # --- NEW EDIT BUTTON ---
         ttk.Button(control_frame, text="Edit Selected", command=self.edit_selected_url).pack(side=tk.LEFT, padx=5)
-        # -----------------------
         ttk.Button(control_frame, text="Remove Selected", command=self.remove_url).pack(side=tk.LEFT, padx=5)
         ttk.Button(control_frame, text="Run Scraping Now", command=self.start_scraping).pack(side=tk.RIGHT, padx=5)
         
@@ -159,7 +174,7 @@ class ImotScraperGUI:
         file_view_frame = ttk.LabelFrame(upper_section, text="View CSV Files", padding=10)
         file_view_frame.pack(fill=tk.X, pady=(0, 10))
         
-        # Create a sub-frame for buttons and save it to an instance variable
+        # Store the sub-frame for buttons
         self.file_view_button_frame = ttk.Frame(file_view_frame)
         self.file_view_button_frame.pack(fill=tk.X, padx=5, pady=5)
         
@@ -184,21 +199,10 @@ class ImotScraperGUI:
         self.setup_logging()
         self.load_existing_urls()
 
-    # --- Utility Methods ---
-    def setup_logging(self):
-        """Configures Python's logging to route messages to the GUI's log text widget."""
-        handler = TextHandler(self.log_text)
-        formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
-        handler.setFormatter(formatter)
-        
-        root_logger = logging.getLogger()
-        if not any(isinstance(h, TextHandler) for h in root_logger.handlers):
-            root_logger.addHandler(handler)
-        
-        root_logger.setLevel(logging.INFO)
+    # --- Utility and UI Interaction Methods ---
 
     def view_csv_file(self, filename):
-        # Implementation remains the same
+        """Opens a new window to display the contents of a specified CSV file."""
         filepath = os.path.join(self.data_dir, filename)
         if not os.path.exists(filepath):
             messagebox.showerror("Error", f"File not found: {filepath}")
@@ -227,6 +231,7 @@ class ImotScraperGUI:
         tree.configure(yscrollcommand=vsb.set, xscrollcommand=hsb.set)
 
         try:
+            # FIX: Use UTF-8 encoding when reading CSV content
             with open(filepath, 'r', encoding='utf-8') as file:
                 csv_reader = csv.reader(file)
                 headers = next(csv_reader)
@@ -246,12 +251,12 @@ class ImotScraperGUI:
     def load_file_view_buttons(self, button_frame, input_file):
         """Helper to create or destroy file view buttons."""
         
-        # Clear existing buttons
         for widget in button_frame.winfo_children():
             widget.destroy()
             
         if os.path.exists(input_file):
             try:
+                # FIX: Use UTF-8 encoding when reading inputURLS.csv
                 with open(input_file, 'r', encoding='utf-8') as f:
                     reader = csv.DictReader(f)
                     for row in reader:
@@ -265,17 +270,12 @@ class ImotScraperGUI:
                                 width=20
                             ).pack(side=tk.LEFT, padx=5, pady=5)
             except Exception as e:
-                # The exception log will now report a clean message, if any other error occurs
                 logging.error(f"Error loading file view buttons: {e}")
 
-    # --- BUG FIX: Simplified Refresh ---
     def refresh_file_view(self):
         """Triggers a reload of the file view buttons after an add/remove operation."""
         input_file = os.path.join(self.data_dir, 'inputURLS.csv')
-        # Use the stored instance variable for the button frame
         self.load_file_view_buttons(self.file_view_button_frame, input_file)
-
-    # --- New/Updated Dialog Methods ---
 
     def edit_selected_url(self):
         """Handles the 'Edit Selected' button click."""
@@ -284,15 +284,11 @@ class ImotScraperGUI:
             messagebox.showwarning("Warning", "Please select a search to edit.")
             return
         
-        # Only edit the first selected item
         item_id = selected_items[0]
-        # values: ('Search Name', 'Emails', 'URL')
         values = self.tree.item(item_id)['values']
         
-        # Split emails for populating the fields
         emails = values[1].split(';')
         
-        # Call the dialog in "edit" mode
         self.show_add_url_dialog(
             action="edit",
             item_id=item_id,
@@ -319,91 +315,7 @@ class ImotScraperGUI:
         main_frame.grid(row=0, column=0, sticky='nsew')
         main_frame.columnconfigure(1, weight=1) 
         
-        # --- NEW PASTE HELPER FUNCTION ---
-        def paste_from_clipboard(event):
-            """Inserts clipboard content into the focused widget."""
-            try:
-                # Use standard Tkinter clipboard retrieval
-                clipboard_content = self.root.clipboard_get()
-                widget = dialog.focus_get()
-                if isinstance(widget, ttk.Entry) or isinstance(widget, tk.Entry):
-                    widget.insert(tk.INSERT, clipboard_content)
-                return "break" # Prevent default key handling
-            except tk.TclError:
-                # Handle cases where clipboard is empty or inaccessible
-                pass
-        # ---------------------------------
-
-        # 1. URL Input
-        ttk.Label(main_frame, text="URL:").grid(row=0, column=0, padx=5, pady=5, sticky='W')
-        url_entry = ttk.Entry(main_frame, width=50)
-        url_entry.grid(row=0, column=1, padx=5, pady=5, sticky='EW')
-        url_entry.insert(0, url)
-        # Bind paste to the URL field
-        url_entry.bind('<Control-v>', paste_from_clipboard)
-        url_entry.bind('<Command-v>', paste_from_clipboard) 
-        
-        if action == "edit":
-            url_entry.config(state=tk.DISABLED) 
-        else:
-            url_entry.config(state=tk.NORMAL) 
-
-        # 2. Search Name Input
-        ttk.Label(main_frame, text="Search Name:").grid(row=1, column=0, padx=5, pady=5, sticky='W')
-        name_entry = ttk.Entry(main_frame, width=50)
-        name_entry.grid(row=1, column=1, padx=5, pady=5, sticky='EW')
-        name_entry.insert(0, search_name)
-        # Bind paste to the Search Name field
-        name_entry.bind('<Control-v>', paste_from_clipboard)
-        name_entry.bind('<Command-v>', paste_from_clipboard)
-        
-        name_entry.config(state=tk.NORMAL)
-        
-        # 3. Email Input Frame (Scrollable area for emails)
-        email_frame_container = ttk.Frame(main_frame)
-        email_frame_container.grid(row=2, column=0, columnspan=2, padx=5, pady=10, sticky='EW')
-        
-        email_canvas = tk.Canvas(email_frame_container, height=100)
-        email_canvas.pack(side="left", fill="both", expand=True)
-        
-        email_scrollbar = ttk.Scrollbar(email_frame_container, orient="vertical", command=email_canvas.yview)
-        email_scrollbar.pack(side="right", fill="y")
-        
-        email_canvas.configure(yscrollcommand=email_scrollbar.set)
-        
-        email_frame = ttk.Frame(email_canvas, padding=5)
-        email_canvas.create_window((0, 0), window=email_frame, anchor="nw", tags="email_frame")
-        
-        email_frame.bind("<Configure>", lambda e: email_canvas.configure(scrollregion = email_canvas.bbox("all")))
-        email_frame_container.bind("<Configure>", lambda e: email_canvas.itemconfig("email_frame", width=e.width))
-        
-        email_frame.columnconfigure(1, weight=1)
-
-        self.email_entries = []
-        
-        add_email_btn = ttk.Button(email_frame, text="+ Add Email", command=lambda: add_email_field())
-        
-# FILE: imot_gui.py (Replace your entire show_add_url_dialog method)
-
-    def show_add_url_dialog(self, action="create", item_id=None, url="", search_name="", emails=None):
-        """Shows a modal dialog to input/edit URL, Search Name, and multiple Emails."""
-        if emails is None:
-            emails = [""] 
-
-        dialog = tk.Toplevel(self.root)
-        dialog.title("Add New Search" if action == "create" else f"Edit {search_name}")
-        dialog.geometry("500x350")
-        dialog.minsize(450, 300) 
-        dialog.transient(self.root) 
-        
-        dialog.rowconfigure(0, weight=1)
-        dialog.columnconfigure(0, weight=1)
-
-        main_frame = ttk.Frame(dialog, padding=10)
-        main_frame.grid(row=0, column=0, sticky='nsew')
-        main_frame.columnconfigure(1, weight=1) 
-        
-        # --- NEW PASTE HELPER FUNCTION ---
+        # --- PASTE HELPER FUNCTION ---
         def paste_from_clipboard(event):
             """Inserts clipboard content into the focused widget."""
             try:
@@ -414,7 +326,7 @@ class ImotScraperGUI:
                 return "break"
             except tk.TclError:
                 pass
-        # ---------------------------------
+        # -----------------------------
 
         # 1. URL Input
         ttk.Label(main_frame, text="URL:").grid(row=0, column=0, padx=5, pady=5, sticky='W')
@@ -424,6 +336,7 @@ class ImotScraperGUI:
         url_entry.bind('<Control-v>', paste_from_clipboard)
         url_entry.bind('<Command-v>', paste_from_clipboard) 
         
+        # FIX: URL is EDITABLE ONLY IN NEW MODE
         if action == "edit":
             url_entry.config(state=tk.DISABLED) 
         else:
@@ -437,6 +350,7 @@ class ImotScraperGUI:
         name_entry.bind('<Control-v>', paste_from_clipboard)
         name_entry.bind('<Command-v>', paste_from_clipboard)
         
+        # FIX: Search Name is EDITABLE IN ALL MODES
         name_entry.config(state=tk.NORMAL)
         
         # 3. Email Input Frame (Scrollable area for emails)
@@ -461,7 +375,6 @@ class ImotScraperGUI:
 
         self.email_entries = []
         
-        # --- FIX: Define add_email_btn BEFORE the function that uses it ---
         add_email_btn = ttk.Button(email_frame, text="+ Add Email", command=lambda: add_email_field())
         
         def add_email_field(event=None, email_value=""):
@@ -489,7 +402,6 @@ class ImotScraperGUI:
         for email in emails:
             add_email_field(email_value=email)
         
-        # Ensure at least one field and the button are drawn on creation/edit load
         if not self.email_entries:
              add_email_field(email_value="")
         
@@ -499,7 +411,7 @@ class ImotScraperGUI:
         save_btn.grid(row=3, column=1, pady=10, sticky='E')
         
         dialog.grab_set() 
-        self.root.wait_window(dialog)
+        self.root.wait_window(dialog) 
 
     def _save_dialog_data(self, dialog, url, search_name_display, item_id=None):
         """Processes and saves data from the Add/Edit Search dialog."""
@@ -507,20 +419,16 @@ class ImotScraperGUI:
         url = url.strip()
         search_name_display = search_name_display.strip()
         
-        # 1. Basic Validation
         if not url or not search_name_display:
             messagebox.showerror("Error", "URL and Search Name are required.", parent=dialog)
             return
 
-        # Backend filename must retain the .csv extension
         filename = search_name_display + '.csv'
         
-        # 2. Collect Emails and Concatenate
         emails = []
         for entry in self.email_entries:
             email = entry.get().strip()
             if email:
-                # Simple email validation
                 if re.match(r"[^@]+@[^@]+\.[^@]+", email): 
                     emails.append(email)
                 else:
@@ -529,27 +437,18 @@ class ImotScraperGUI:
         
         email_string = ";".join(emails) 
         
-        # 3. Update/Insert Treeview and Save
-        # Treeview column order: ('Search Name', 'Emails', 'URL')
         treeview_values = (search_name_display, email_string, url)
         
         if item_id:
-            # Edit existing record
             self.tree.item(item_id, values=treeview_values)
             logging.info(f"Edited search: {search_name_display}")
         else:
-            # Insert new record
             self.tree.insert('', tk.END, values=treeview_values)
             logging.info(f"Added new search: {search_name_display}")
             
         self.save_urls_to_csv()
-        
-        # Refresh the File View buttons
         self.refresh_file_view() 
-        
-        # 4. Close the modal dialog
         dialog.destroy()
-
 
     # --- CRUD Operations ---
     
@@ -561,7 +460,7 @@ class ImotScraperGUI:
         for item in selected_items:
             values = self.tree.item(item)['values']
             
-            search_name_display = values[0] # Search Name (without .csv)
+            search_name_display = values[0]
             filename_to_delete = f"{search_name_display}.csv" 
             
             # 1. Delete primary file
@@ -590,19 +489,20 @@ class ImotScraperGUI:
     def load_existing_urls(self):
         input_file = os.path.join(self.data_dir, 'inputURLS.csv')
         if os.path.exists(input_file):
-            with open(input_file, 'r', encoding='utf-8') as f:
-                reader = csv.DictReader(f)
-                for row in reader:
-                    url = row.get('URL', '')
-                    filename = row.get('FileName', '') # e.g., "MySearch.csv"
-                    emails = row.get('Send to Emails', '')
-                    
-                    if url and filename:
-                         # Strip .csv for display in the 'Search Name' column
-                         search_name_display = filename.replace('.csv', '')
-                         
-                         # Treeview column order: ('Search Name', 'Emails', 'URL')
-                         self.tree.insert('', tk.END, values=(search_name_display, emails, url))
+            try:
+                # FIX: Use UTF-8 encoding when reading inputURLS.csv
+                with open(input_file, 'r', encoding='utf-8') as f:
+                    reader = csv.DictReader(f)
+                    for row in reader:
+                        url = row.get('URL', '')
+                        filename = row.get('FileName', '')
+                        emails = row.get('Send to Emails', '')
+                        
+                        if url and filename:
+                            search_name_display = filename.replace('.csv', '')
+                            self.tree.insert('', tk.END, values=(search_name_display, emails, url))
+            except Exception as e:
+                 logging.error(f"Error loading existing URLs: {e}")
 
     def save_urls_to_csv(self):
         """Saves all current Treeview data to inputURLS.csv."""
@@ -610,11 +510,8 @@ class ImotScraperGUI:
         
         final_data = []
         for item in self.tree.get_children():
-            # Treeview items are read in the order they were specified in 'columns'
-            # ('Search Name', 'Emails', 'URL')
             search_name_display, emails, url = self.tree.item(item)['values']
             
-            # Reconstruct the filename needed for the scraper
             filename = f"{search_name_display}.csv"
             
             final_data.append({
@@ -625,8 +522,7 @@ class ImotScraperGUI:
 
         fieldnames = ['URL', 'FileName', 'Send to Emails']
         
-        # --- THIS IS THE CRITICAL LINE THAT MUST BE CORRECTED ---
-        # Note the 'encoding="utf-8"' argument here.
+        # FIX: Use UTF-8 encoding when writing inputURLS.csv
         with open(input_file, 'w', newline='', encoding='utf-8') as f:
              writer = csv.DictWriter(f, fieldnames=fieldnames)
              writer.writeheader()
@@ -634,85 +530,67 @@ class ImotScraperGUI:
         
         logging.info("URL list saved to inputURLS.csv.")
 
-
-    # --- Scheduler/Threading Methods ---
-
-    def check_schedule_status_log(self):
-        # Implementation remains the same
-        if not self.scheduler_running:
-            logging.info("ℹ️ Scheduler is currently STOPPED.")
-            return
-
-        import schedule
-        
-        jobs = schedule.get_jobs()
-        if not jobs:
-            logging.warning("⚠️ Scheduler is RUNNING, but no jobs are currently registered.")
-            return
-
-        logging.info(f"✅ Scheduler is RUNNING with {len(jobs)} registered job(s):")
-        
-        for job in jobs:
-            next_run_time = job.next_run.strftime("%Y-%m-%d %H:%M:%S") if job.next_run else "N/A"
-            
-            logging.info(f"   - Job Function: {job.job_func.__name__}")
-            logging.info(f"   - Run Interval: {job.interval} {job.unit} (every {job.unit})")
-            logging.info(f"   - Next Run Time: {next_run_time}")
-            logging.info("   -----------------------------------")
-
+    def toggle_schedule(self):
+        """Checks the current scheduler status and toggles the action (Start/Stop)."""
+        if self.scheduler_running:
+            self.stop_schedule()
+        else:
+            self.start_schedule()
 
     def start_schedule(self):
-        # Implementation remains the same
+        """Starts the daily scheduled scraper job in a background thread."""
         time_str = self.time_entry.get().strip()
         
         if not re.match(r'^\d{2}:\d{2}$', time_str):
             messagebox.showerror("Error", "Please enter the time in HH:MM format (e.g., 08:30).")
+            self.update_schedule_status("STOPPED", "red", button_text="Start Daily Schedule") 
             return
             
-        self.update_schedule_status("STARTING...", "orange", start_enabled=False, stop_enabled=False)
+        self.update_schedule_status("STARTING...", "orange", button_text="Starting...")
 
         threading.Thread(target=self._start_schedule_thread, args=(time_str,), daemon=True).start()
 
     def _start_schedule_thread(self, time_str):
-        # Implementation remains the same
+        """Internal worker function to start the scheduler in a background thread."""
         try:
             if self.scheduler.start(time_str):
                 self.root.after(0, lambda: self.update_schedule_status(
-                    f"RUNNING daily at {time_str}", "green", start_enabled=False
+                    f"RUNNING daily at {time_str}", "green", button_text="Stop Schedule"
                 ))
                 self.scheduler_running = True
             else:
                 self.root.after(0, lambda: self.update_schedule_status(
-                    f"ERROR starting at {time_str}", "red", stop_enabled=False
+                    f"ERROR starting at {time_str}", "red", button_text="Start Daily Schedule"
                 ))
         except Exception as e:
             self.root.after(0, lambda: logging.error(f"Scheduler startup failed: {e}"))
             self.root.after(0, lambda: self.update_schedule_status(
-                "ERROR", "red", stop_enabled=False
+                "ERROR", "red", button_text="Start Daily Schedule"
             ))
 
     def stop_schedule(self):
-        # Implementation remains the same
+        """Stops the daily scheduled scraper job."""
+        
         self.scheduler.stop()
         self.scheduler_running = False
-        self.update_schedule_status("STOPPED", "red", stop_enabled=False)
+        self.update_schedule_status("STOPPED", "red", button_text="Start Daily Schedule")
         
-    def update_schedule_status(self, status_text, color, start_enabled=True, stop_enabled=True):
-        # Implementation remains the same
+    def update_schedule_status(self, status_text, color, button_text=None):
+        """Updates the scheduler status label and button text/state."""
         self.schedule_status_label.config(text=f"Status: {status_text}", foreground=color)
         
-        if start_enabled:
-            self.start_schedule_btn.config(state=tk.NORMAL)
-        else:
-            self.start_schedule_btn.config(state=tk.DISABLED)
+        if button_text:
+            self.schedule_btn.config(text=button_text)
 
-        if stop_enabled:
-            self.stop_schedule_btn.config(state=tk.NORMAL)
+        # Disable button only while the operation is pending/in-progress
+        if status_text == "STARTING...":
+            self.schedule_btn.config(state=tk.DISABLED)
         else:
-            self.stop_schedule_btn.config(state=tk.DISABLED)
+            self.schedule_btn.config(state=tk.NORMAL)
+
 
     def start_scraping(self):
-        # Implementation remains the same
+        """Starts the scraping process in a new thread immediately."""
         if self.scheduler_running:
             messagebox.showwarning("Warning", "The scheduler is currently running. Please stop it first before running an on-demand job.")
             return
@@ -722,7 +600,8 @@ class ImotScraperGUI:
         self.scraper_thread.start()
     
     def run_scraper(self):
-        # Implementation remains the same
+        """Executes the scraper job (on-demand)."""
+        
         try:
             self.root.after(0, lambda: logging.info("Starting on-demand scraper run..."))
             
@@ -741,7 +620,7 @@ class ImotScraperGUI:
             
 
     def on_closing(self):
-        # Implementation remains the same
+        """Handle window closing event: ensures scheduler thread is terminated."""
         if self.scheduler_running:
             logging.info("Stopping scheduler before exit...")
             self.scheduler.stop()
