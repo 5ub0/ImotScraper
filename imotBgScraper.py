@@ -59,7 +59,7 @@ def read_input_urls(file_path: str = "data/inputURLS.csv") -> List[Tuple[str, st
     """Read URLs and filenames from input CSV"""
     urls = []
     try:
-        with open(file_path, "r") as csvfile:
+        with open(file_path, "r", encoding="utf-8") as csvfile:
             reader = csv.DictReader(csvfile)
             urls = [(row["URL"], row["FileName"]) for row in reader]
         logging.info(f"Successfully read {len(urls)} URLs from {file_path}")
@@ -174,74 +174,80 @@ def write_output(filename: str, records: List[List[str]], headers: List[str]):
         logging.error(f"Error writing to {filename}: {e}")
 
 def main():
-    session = create_session()
-    urls = read_input_urls()
+    try:
+        session = create_session()
+        urls = read_input_urls()
 
-    for base_url, output_filename in urls:
-        logging.info(f"Processing: {output_filename}")
-        reference_data, processed_keys = read_reference_data(output_filename)
-        new_records = []
-        all_records = []
+        for base_url, output_filename in urls:
+            logging.info(f"Processing: {output_filename}")
+            reference_data, processed_keys = read_reference_data(output_filename)
+            new_records = []
+            all_records = []
 
-        page = 1
-        while True:
-            soup = process_page(session, base_url, page)
-            if not soup:
-                break
+            page = 1
+            while True:
+                soup = process_page(session, base_url, page)
+                if not soup:
+                    break
 
-            listings = soup.find_all("div", class_=lambda x: x and x.startswith('item'))
-            if not listings:
-                if page == 1:
-                    logging.warning("No listings found on page 1")
-                break
+                listings = soup.find_all("div", class_=lambda x: x and x.startswith('item'))
+                if not listings:
+                    if page == 1:
+                        logging.warning("No listings found on page 1")
+                    break
 
-            for listing in listings:
-                result = extract_listing_data(listing)
-                if not result:
-                    continue
+                for listing in listings:
+                    result = extract_listing_data(listing)
+                    if not result:
+                        continue
 
-                title, price_text, link_element, record_id_key = result
+                    title, price_text, link_element, record_id_key = result
+                    
+                    if record_id_key in reference_data:
+                        reference_value = reference_data[record_id_key]
+                        if price_text != reference_value:
+                            new_records.append([title, price_text, reference_value, link_element, record_id_key])
+                            logging.info(f"Changed price: {record_id_key} from {reference_value} to {price_text} - {link_element}")
+                        new_value = reference_value if price_text != reference_value else ""
+                        del reference_data[record_id_key]
+                    else:
+                        new_value = "new"
+                        new_records.append([title, price_text, new_value, link_element, record_id_key])
+                        logging.info(f"New record: {title} with price: {price_text} - {link_element}")
+
+                    all_records.append([title, price_text, new_value, link_element, record_id_key])
                 
-                if record_id_key in reference_data:
-                    reference_value = reference_data[record_id_key]
-                    if price_text != reference_value:
-                        new_records.append([title, price_text, reference_value, link_element, record_id_key])
-                        logging.info(f"Changed price: {record_id_key} from {reference_value} to {price_text} - {link_element}")
-                    new_value = reference_value if price_text != reference_value else ""
-                    del reference_data[record_id_key]
-                else:
-                    new_value = "new"
-                    new_records.append([title, price_text, new_value, link_element, record_id_key])
-                    logging.info(f"New record: {title} with price: {price_text} - {link_element}")
+                if not soup.find('a', class_='saveSlink next'):
+                    break
+                page += 1
 
-                all_records.append([title, price_text, new_value, link_element, record_id_key])
+            # Handle remaining/deleted records
+            for record_id_key, reference_value in reference_data.items():
+                if record_id_key not in processed_keys:
+                    all_records.append([record_id_key, reference_value, "missing", "", record_id_key])
+                    logging.info(f"Missing record: {record_id_key}")
+
+            # Write output files
+            write_output(output_filename, all_records, CONFIG['HEADERS'])
             
-            if not soup.find('a', class_='saveSlink next'):
-                break
-            page += 1
+            new_records_filename = f"NewRecords_{output_filename}"
+            if new_records:
+                write_output(new_records_filename, new_records, CONFIG['HEADERS'])
+            else:
+                try:
+                    filepath = os.path.join(CONFIG['DATA_DIR'], new_records_filename)  # Add this line
+                    if os.path.isfile(filepath):  # Change new_records_filename to filepath
+                        os.remove(filepath)
+                    # Modified message to include record count
+                    total_records = len(all_records)
+                    logging.info(f"No new records for: {output_filename} among {total_records} records")
+                except OSError:
+                    pass
 
-        # Handle remaining/deleted records
-        for record_id_key, reference_value in reference_data.items():
-            if record_id_key not in processed_keys:
-                all_records.append([record_id_key, reference_value, "missing", "", record_id_key])
-                logging.info(f"Missing record: {record_id_key}")
-
-        # Write output files
-        write_output(output_filename, all_records, CONFIG['HEADERS'])
-        
-        new_records_filename = f"NewRecords_{output_filename}"
-        if new_records:
-            write_output(new_records_filename, new_records, CONFIG['HEADERS'])
-        else:
-            try:
-                filepath = os.path.join(CONFIG['DATA_DIR'], new_records_filename)  # Add this line
-                if os.path.isfile(filepath):  # Change new_records_filename to filepath
-                    os.remove(filepath)
-                # Modified message to include record count
-                total_records = len(all_records)
-                logging.info(f"No new records for: {output_filename} among {total_records} records")
-            except OSError:
-                pass
+        return True
+    except Exception as e:
+        logging.error(f"Scraper failed with exception: {e}")
+        return False
 
 if __name__ == "__main__":
     try:
