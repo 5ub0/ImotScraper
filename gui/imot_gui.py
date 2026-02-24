@@ -590,12 +590,22 @@ class ImotScraperGUI:
             success = self.controller.run_scraper()
             print(f"[GUI] Scraper completed with result: {success}")
             
-            # Send reports/notifications
-            self.root.after(0, lambda: logging.info("Sending reports..."))
-            self.controller.send_email_reports(success)
+            # Queue all remaining operations to the main thread
+            def finalize_scraper_run(result):
+                try:
+                    print(f"[GUI] Finalizing scraper run with result: {result}")
+                    logging.info("Sending reports...")
+                    self.controller.send_email_reports(result)
+                    logging.info("Scraping completed! Check the output above for results.")
+                    self.refresh_file_view()
+                except Exception as e:
+                    print(f"[GUI] Error during finalization: {e}")
+                    logging.error(f"Error finalizing scraper run: {e}")
+                    import traceback
+                    traceback.print_exc()
             
-            self.root.after(0, lambda: logging.info("Scraping completed! Check the output above for results."))
-            self.root.after(0, self.refresh_file_view)
+            # Queue the finalization to the main thread
+            self.root.after(0, lambda: finalize_scraper_run(success))
             
         except Exception as e:
             error_msg = f"Critical Error during on-demand run: {str(e)}"

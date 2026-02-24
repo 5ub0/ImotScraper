@@ -54,153 +54,33 @@ class ReportMailer:
         If success is True, sends customized reports to all relevant users. 
         If success is False, sends a failure email ONLY to the administrator.
         """
-        if not self.is_configured:
-            logging.info("Email service not configured - skipping email notifications. Set IMOT_SENDER_EMAIL and IMOT_SENDER_PASSWORD to enable.")
-            return
-
-        if success:
-            logging.info("Scraper succeeded. Preparing and sending customized reports.")
-            self._send_success_reports(data_dir, input_csv)
-        else:
-            logging.warning("Scraper failed. Sending failure notification to administrator.")
-            self._send_failure_notification()
+        logging.info("Email notifications disabled - email functionality will be restored in the future.")
+        return
 
     def _generate_report_summary(self, filename: str, data_dir: str) -> str:
         """
         Generates a text summary for a single search (FileName) by reading the NewRecords file.
+        DISABLED - Email functionality is currently disabled.
         """
-        search_name = filename.strip('.csv')
-        new_records_file = f"NewRecords_{filename}"
-        filepath = os.path.join(data_dir, new_records_file)
-        
-        summary = [f" - **{search_name}:**"]
-        
-        if not os.path.exists(filepath):
-            summary.append(f"    - No new records or price changes found.")
-            return NEW_LINE.join(summary)
-            
-        try:
-            with open(filepath, 'r', encoding='utf-8') as f:
-                reader = csv.DictReader(f)
-                records_found = 0
-                
-                for row in reader:
-                    title = row.get('Title', 'Property')
-                    price = row.get('Price', 'N/A')
-                    old_value = row.get('oldValue', '')
-                    link = row.get('Link', '#')
-                    
-                    if old_value.lower() == 'new':
-                        summary.append(f"    - New Add: {title} price: {price} ({link})")
-                    else:
-                        summary.append(f"    - Price Update: {title} price updated to: {price} from: {old_value} ({link})")
-                    records_found += 1
-
-                if records_found == 0:
-                     summary.append(f"    - No new records or price changes found.")
-                         
-        except Exception as e:
-            logging.error(f"Error reading report file {filepath}: {e}")
-            summary.append(f"    - Error generating report details.")
-
-        return NEW_LINE.join(summary)
+        return ""
 
     def _send_success_reports(self, data_dir, input_csv):
         """
         Prepares and sends individualized reports based on search files.
+        DISABLED - Email functionality is currently disabled.
         """
-        logging.info("Preparing individualized reports based on search files.")
-        recipient_searches: Dict[str, List[str]] = {}
-
-        try:
-            with open(input_csv, 'r', encoding='utf-8') as f:
-                reader = csv.DictReader(f)
-                for row in reader:
-                    filename = row.get('FileName')
-                    emails_to_send_str = row.get('Send to Emails') or row.get('Email') 
-                    
-                    if not filename or not emails_to_send_str: continue
-                        
-                    separator = ';' if ';' in emails_to_send_str else ','
-                    recipients = [email.strip() for email in emails_to_send_str.split(separator) if email.strip()]
-                    
-                    for email in recipients:
-                        if re.match(r"[^@]+@[^@]+\.[^@]+", email):
-                            if email not in recipient_searches:
-                                recipient_searches[email] = []
-                            recipient_searches[email].append(filename)
-                        else:
-                            logging.warning(f"Skipping invalid email: {email}")
-            
-        except FileNotFoundError:
-            logging.error(f"Could not find input file: {input_csv}")
-            return
-        except Exception as e:
-            logging.error(f"Error mapping recipients: {e}")
-            return
-
-        if not recipient_searches:
-             logging.warning("No valid email recipients found. Skipping email send.")
-             return
-             
-        for recipient_email, filenames in recipient_searches.items():
-            logging.info(f"Generating consolidated report for: {recipient_email}")
-            
-            full_report_content = []
-            for filename in filenames:
-                summary = self._generate_report_summary(filename, data_dir)
-                full_report_content.append(summary)
-
-            email_body = (
-                REPORT_HEADER + NEW_LINE.join(full_report_content) + REPORT_FOOTER
-            )
-            
-            self._send_email(
-                to_emails_list=[recipient_email], 
-                subject="Scraper Report: Your Property Watch Updates",
-                body=email_body
-            )
+        return
 
     def _send_failure_notification(self):
         """
         Sends a simple error email to the defined administrator.
-        Only sends if SMTP is properly configured.
+        DISABLED - Email functionality is currently disabled.
         """
-        if not self.is_configured:
-            logging.warning("Cannot send failure notification: SMTP not configured")
-            return
-            
-        self._send_email(
-            to_emails_list=[ADMIN_EMAIL],
-            subject="!! URGENT: Scraper Failure Notification !!",
-            body=FAILURE_REPORT_CONTENT
-        )
+        return
 
     def _send_email(self, to_emails_list: List[str], subject: str, body: str) -> bool:
         """
         Internal method to send a single email with only text body.
+        DISABLED - Email functionality is currently disabled.
         """
-        if not to_emails_list:
-            logging.warning("No recipients specified, skipping email.")
-            return False
-
-        try:
-            msg = MIMEMultipart()
-            msg['From'] = self.smtp_user
-            msg['To'] = ", ".join(to_emails_list)
-            msg['Subject'] = subject
-            
-            msg.attach(MIMEText(body, 'plain'))
-            
-            logging.info(f"Connecting to {self.smtp_server}:{self.smtp_port}...")
-            with smtplib.SMTP(self.smtp_server, self.smtp_port) as server:
-                server.starttls()
-                server.login(self.smtp_user, self.smtp_pass)
-                server.sendmail(self.smtp_user, to_emails_list, msg.as_string())
-            
-            logging.info(f"Email sent successfully to {', '.join(to_emails_list)}.")
-            return True
-
-        except Exception as e:
-            logging.error(f"Failed to send email: {e}")
-            return False
+        return False
