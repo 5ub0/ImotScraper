@@ -13,14 +13,16 @@ from requests.packages.urllib3.util.retry import Retry
 import logging
 from time import sleep
 
+from database.db_manager import DatabaseManager
+
 
 class ImotScraper:
     """Handles scraping of property listings from imot.bg"""
     
     CONFIG = {
         'BASE_URL': 'http://imot.bg',
-        'HEADERS': ["Title", "Price", "oldValue", "Link", "RecordId"],
         'REQUEST_DELAY': 1,
+        'DETAIL_DELAY': 0.3,
         'DATA_DIR': 'data'
     }
 
@@ -29,96 +31,151 @@ class ImotScraper:
         self.config = self.CONFIG.copy()
         self.config['DATA_DIR'] = data_dir
         self.logger = logging.getLogger(__name__)
-        
+        self.db = DatabaseManager(db_path=os.path.join(data_dir, "imot_scraper.db"))
+
         if not os.path.exists(self.config['DATA_DIR']):
             os.makedirs(self.config['DATA_DIR'])
 
     def execute(self, input_csv: str = "data/inputURLS.csv") -> bool:
-        """Execute the scraping job"""
+        """Execute the scraping job. Reads searches from DB, persists results to DB."""
         try:
-            self.logger.info(f"Starting scraper execution with input CSV: {input_csv}")
-            
-            # Check if input CSV exists
-            if not os.path.exists(input_csv):
-                self.logger.error(f"Input CSV file not found: {input_csv}")
-                return False
-            
+            self.logger.info("Starting scraper execution - reading searches from database.")
+
+            searches = self.db.get_all_searches()
+            if not searches:
+                self.logger.warning("No searches found in the database. Add searches via the GUI.")
+                return True
+
             session = self._create_session()
-            urls = self._read_input_urls(input_csv)
-            
-            if not urls:
-                self.logger.warning("No URLs found in input CSV file")
-                return True  # Not an error, just no URLs to process
-
-            for base_url, output_filename in urls:
-                self.logger.info(f"Processing: {output_filename}")
-                reference_data, processed_keys = self._read_reference_data(output_filename)
-                new_records = []
-                all_records = []
-
-                page = 1
-                while True:
-                    soup = self._process_page(session, base_url, page)
-                    if not soup:
-                        break
-
-                    listings = soup.find_all("div", class_=lambda x: x and x.startswith('item'))
-                    if not listings:
-                        if page == 1:
-                            self.logger.warning("No listings found on page 1")
-                        break
-
-                    for listing in listings:
-                        result = self._extract_listing_data(listing)
-                        if not result:
-                            continue
-
-                        title, price_text, link_element, record_id_key = result
-                        
-                        if record_id_key in reference_data:
-                            reference_value = reference_data[record_id_key]
-                            if price_text != reference_value:
-                                new_records.append([title, price_text, reference_value, link_element, record_id_key])
-                                self.logger.info(f"Changed price: {record_id_key} from {reference_value} to {price_text} - {link_element}")
-                            new_value = reference_value if price_text != reference_value else ""
-                            del reference_data[record_id_key]
-                        else:
-                            new_value = "new"
-                            new_records.append([title, price_text, new_value, link_element, record_id_key])
-                            self.logger.info(f"New record: {title} with price: {price_text} - {link_element}")
-
-                        all_records.append([title, price_text, new_value, link_element, record_id_key])
-                    
-                    if not soup.find('a', class_='saveSlink next'):
-                        break
-                    page += 1
-
-                # Handle remaining/deleted records
-                for record_id_key, reference_value in reference_data.items():
-                    if record_id_key not in processed_keys:
-                        all_records.append([record_id_key, reference_value, "missing", "", record_id_key])
-                        self.logger.info(f"Missing record: {record_id_key}")
-
-                # Write output files
-                self._write_output(output_filename, all_records, self.config['HEADERS'])
-                
-                new_records_filename = f"NewRecords_{output_filename}"
-                if new_records:
-                    self._write_output(new_records_filename, new_records, self.config['HEADERS'])
-                else:
-                    try:
-                        filepath = os.path.join(self.config['DATA_DIR'], new_records_filename)
-                        if os.path.isfile(filepath):
-                            os.remove(filepath)
-                        total_records = len(all_records)
-                        self.logger.info(f"No new records for: {output_filename} among {total_records} records")
-                    except OSError:
-                        pass
+            for search in searches:
+                self.logger.info(f"Processing: {search['search_name']}")
+                self._scrape_search(session, search["url"], search["search_name"], search["id"])
 
             return True
+
         except Exception as e:
             self.logger.error(f"Scraper failed with exception: {e}")
             return False
+
+    def _scrape_search(self, session: requests.Session, base_url: str, search_name: str, search_id: int):
+        """Scrape all pages for one search entry and persist results."""
+        active_record_ids: List[str] = []
+        records_found = 0
+        new_count = 0
+        changed_count = 0
+
+        try:
+            # Pre-load known prices for this search into a dict to avoid one DB
+            # round-trip per listing inside the loop.
+            known = self._load_known_prices(search_id)
+
+            page = 1
+            while True:
+                soup = self._process_page(session, base_url, page)
+                if not soup:
+                    break
+
+                listings = soup.find_all("div", class_=lambda x: x and x.startswith('item'))
+                if not listings:
+                    if page == 1:
+                        self.logger.warning(f"No listings found on page 1 for {search_name}")
+                    break
+
+                for listing in listings:
+                    result = self._extract_listing_data(listing)
+                    if not result:
+                        continue
+
+                    list_title, price_text, link, record_id = result
+                    records_found += 1
+                    active_record_ids.append(record_id)
+
+                    existing_price, existing_title, existing_location = known.get(record_id, (None, None, None))
+
+                    if existing_price is None:
+                        # Brand new listing — fetch detail page for clean title + location
+                        title, location = self._extract_title_and_location(session, link)
+                        if not title:
+                            title = list_title
+                        is_new = True
+                        new_count += 1
+                        self.logger.info(f"New listing: {title} | price: {price_text} | {link}")
+                    elif existing_price != price_text:
+                        # Price changed — reuse stored title/location, no detail fetch needed
+                        title = existing_title or list_title
+                        location = existing_location or ""
+                        is_new = False
+                        changed_count += 1
+                        self.logger.info(f"Price change: {title} {existing_price} → {price_text}")
+                    else:
+                        # Unchanged — skip detail fetch and DB write entirely
+                        continue
+
+                    self.db.upsert_property(
+                        record_id=record_id,
+                        search_id=search_id,
+                        title=title,
+                        location=location,
+                        link=link,
+                        price=price_text,
+                        is_new=is_new,
+                    )
+
+                if not soup.find('a', class_='saveSlink next'):
+                    break
+                page += 1
+
+            # Mark anything not seen this run as Inactive
+            inactive_count = self.db.mark_inactive(search_id, active_record_ids)
+
+            self.db.log_scrape_run(
+                search_id=search_id,
+                search_name=search_name,
+                records_found=records_found,
+                new_records=new_count,
+                changed_prices=changed_count,
+                inactive_count=inactive_count,
+                success=True,
+            )
+
+            self.logger.info(
+                f"Done '{search_name}': {records_found} found, "
+                f"{new_count} new, {changed_count} changed, {inactive_count} inactive."
+            )
+
+        except Exception as e:
+            self.logger.error(f"Error scraping '{search_name}': {e}")
+            self.db.log_scrape_run(
+                search_id=search_id,
+                search_name=search_name,
+                records_found=records_found,
+                new_records=new_count,
+                changed_prices=changed_count,
+                inactive_count=0,
+                success=False,
+                error_message=str(e),
+            )
+
+    def _load_known_prices(self, search_id: int) -> dict:
+        """
+        Load all known properties for this search into a dict keyed by record_id.
+        Value is (current_price, title, location) — single DB read before the scrape loop.
+        Returns {} if no properties exist yet.
+        """
+        props = self.db.get_properties(search_id, status=None)
+        if not props:
+            return {}
+
+        conn = self.db._get_connection()
+        result = {}
+        for p in props:
+            row = conn.execute(
+                "SELECT price FROM price_history WHERE property_id = ? AND price_status = 'Current'",
+                (p["id"],)
+            ).fetchone()
+            if row:
+                result[p["record_id"]] = (row["price"], p.get("title", ""), p.get("location", ""))
+        return result
 
     def _create_session(self) -> requests.Session:
         """Create a session with retry logic"""
@@ -157,31 +214,8 @@ class ImotScraper:
             self.logger.error(f"Error reading input URLs: {str(e)}")
             return urls
 
-    def _read_reference_data(self, filename: str) -> Tuple[Dict[str, str], set]:
-        """Read existing data for comparison"""
-        reference_data = {}
-        processed_keys = set()
-
-        filepath = os.path.join(self.config['DATA_DIR'], filename)
-
-        if not os.path.isfile(filepath):
-            return reference_data, processed_keys
-
-        try:
-            with open(filepath, "r", encoding="utf-8") as csvfile:
-                reader = csv.reader(csvfile)
-                header = next(reader, None)
-                if header is not None and len(header) == 5 and header[4] == "RecordId":
-                    for row in reader:
-                        reference_data[row[4]] = row[1]
-                        processed_keys.add(row[4])
-        except Exception as e:
-            self.logger.error(f"Error reading reference data: {str(e)}")
-
-        return reference_data, processed_keys
-
     def _extract_listing_data(self, listing: BeautifulSoup) -> Optional[Tuple[str, str, str, str]]:
-        """Extract data from a listing"""
+        """Extract data from a listing card. Returns (title, price_text, link, record_id)."""
         try:
             if len(listing['class']) > 1 and listing['class'][1] == 'fakti':
                 return None
@@ -193,9 +227,8 @@ class ImotScraper:
             if not link_tag:
                 return None
 
-            full_description = link_tag.get_text(separator=' ', strip=True)
-            parts = full_description.split(' ')
-            title = parts[1] if len(parts) > 1 else ""
+            # Keep the full description text as the title (stripped of extra whitespace)
+            title = link_tag.get_text(separator=' ', strip=True)
 
             price_div = listing.find("div", class_=lambda x: x and x.startswith('price'))
             if not price_div:
@@ -209,6 +242,68 @@ class ImotScraper:
         except Exception as e:
             self.logger.error(f"Error processing listing: {e}")
             return None
+
+    def _fetch_detail(self, session: requests.Session, url: str) -> Optional[BeautifulSoup]:
+        """Fetch and parse an individual property detail page."""
+        try:
+            sleep(self.config['DETAIL_DELAY'])
+            response = session.get(url, timeout=15)
+            response.raise_for_status()
+            return BeautifulSoup(response.content, "html.parser")
+        except Exception as e:
+            self.logger.warning(f"Could not fetch detail page {url}: {e}")
+            return None
+
+    def _extract_title_and_location(self, session: requests.Session, url: str) -> Tuple[str, str]:
+        """
+        Fetch the property detail page and extract the clean title and full location
+        from the `.advHeader` block.
+
+        Returns (title, location) — both empty strings on failure.
+
+        HTML structure targeted:
+          <div class="advHeader">
+            <div class="title">Дава под Наем 3-СТАЕН <div class="btns">...</div></div>
+            <div class="info">
+              <div class="location">
+                град София, Драгалевци
+                <div style="font-weight:normal;">к-с Мирамонте</div>
+              </div>
+            </div>
+          </div>
+        """
+        soup = self._fetch_detail(session, url)
+        if not soup:
+            return "", ""
+
+        adv_header = soup.find("div", class_="advHeader")
+        if not adv_header:
+            return "", ""
+
+        # --- Title ---
+        title_div = adv_header.find("div", class_="title")
+        title = ""
+        if title_div:
+            # Remove the nested .btns div so we only get the title text node
+            btns = title_div.find("div", class_="btns")
+            if btns:
+                btns.decompose()
+            title = title_div.get_text(separator=' ', strip=True)
+
+        # --- Location ---
+        location = ""
+        location_div = adv_header.find("div", class_="location")
+        if location_div:
+            # Collect all text parts (main line + any sub-divs like к-с Мирамонте)
+            parts = []
+            for node in location_div.descendants:
+                if isinstance(node, str):
+                    text = node.strip()
+                    if text:
+                        parts.append(text)
+            location = ", ".join(dict.fromkeys(parts))  # deduplicate while preserving order
+
+        return title, location
 
     def _extract_price(self, price_div: BeautifulSoup) -> Optional[str]:
         """Extract price information from price div"""
@@ -246,17 +341,6 @@ class ImotScraper:
         except Exception as e:
             self.logger.error(f"Error processing page {page}: {e}")
             return None
-
-    def _write_output(self, filename: str, records: List[List[str]], headers: List[str]):
-        """Write records to output file"""
-        try:
-            filepath = os.path.join(self.config['DATA_DIR'], filename)
-            with open(filepath, "w", newline="", encoding="utf-8") as csvfile:
-                writer = csv.writer(csvfile)
-                writer.writerow(headers)
-                writer.writerows(records)
-        except Exception as e:
-            self.logger.error(f"Error writing to {filename}: {e}")
 
 
 # Backward compatibility function
