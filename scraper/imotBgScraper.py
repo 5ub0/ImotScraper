@@ -99,7 +99,7 @@ class ImotScraper:
                             title = list_title
                         is_new = True
                         new_count += 1
-                        self.logger.info(f"New listing: {title} | price: {price_text} | {link}")
+                        self.logger.info(f"New listing: {title} | price: {price_text} | search: {search_name} | {link}")
                     elif existing_price != price_text:
                         # Price changed — reuse stored title/location/description, no detail fetch needed
                         title = existing_title or list_title
@@ -108,7 +108,7 @@ class ImotScraper:
                         image_urls  = None   # no re-fetch; images already stored
                         is_new = False
                         changed_count += 1
-                        self.logger.info(f"Price change: {title} {existing_price} → {price_text}")
+                        self.logger.info(f"Price change: {title} {existing_price} → {price_text} | search: {search_name}")
                     else:
                         # Unchanged — skip detail fetch and DB write entirely
                         continue

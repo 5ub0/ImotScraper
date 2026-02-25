@@ -170,8 +170,8 @@ class ResultsFeedHandler(logging.Handler):
       "Price change: <title> <old> → <new>"
     """
 
-    _RE_NEW     = re.compile(r"New listing: (.+?) \| price: (.+?) \| (https?://\S+)")
-    _RE_CHANGED = re.compile(r"Price change: (.+?) (\S+) → (\S+)")
+    _RE_NEW     = re.compile(r"New listing: (.+?) \| price: (.+?) \| search: (.+?) \| (https?://\S+)")
+    _RE_CHANGED = re.compile(r"Price change: (.+?) (\S+) → (\S+) \| search: (.+)")
 
     def __init__(self, bridge: FeedBridge) -> None:
         super().__init__()
@@ -182,20 +182,22 @@ class ResultsFeedHandler(logging.Handler):
         m = self._RE_NEW.search(msg)
         if m:
             self._bridge.event_received.emit({
-                "kind":  "NEW",
-                "title": m.group(1).strip(),
-                "price": m.group(2).strip(),
-                "link":  m.group(3).strip(),
+                "kind":        "NEW",
+                "title":       m.group(1).strip(),
+                "price":       m.group(2).strip(),
+                "search_name": m.group(3).strip(),
+                "link":        m.group(4).strip(),
             })
             return
         m = self._RE_CHANGED.search(msg)
         if m:
             self._bridge.event_received.emit({
-                "kind":      "CHANGED",
-                "title":     m.group(1).strip(),
-                "old_price": m.group(2).strip(),
-                "price":     m.group(3).strip(),
-                "link":      "",
+                "kind":        "CHANGED",
+                "title":       m.group(1).strip(),
+                "old_price":   m.group(2).strip(),
+                "price":       m.group(3).strip(),
+                "search_name": m.group(4).strip(),
+                "link":        "",
             })
 
 
@@ -807,14 +809,16 @@ class ImotScraperMainWindow(QMainWindow):
         feed_layout = QVBoxLayout(feed_group)
         feed_layout.setContentsMargins(6, 12, 6, 6)   # top=12 keeps text clear of groupbox title
 
-        self._feed_table = QTableWidget(0, 3)
+        self._feed_table = QTableWidget(0, 4)
         self._feed_table.setObjectName("feedTable")
-        self._feed_table.setHorizontalHeaderLabels(["Type", "Title", "Price"])
+        self._feed_table.setHorizontalHeaderLabels(["Search", "Type", "Title", "Price"])
         self._feed_table.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeMode.Fixed)
-        self._feed_table.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
-        self._feed_table.horizontalHeader().setSectionResizeMode(2, QHeaderView.ResizeMode.Fixed)
-        self._feed_table.setColumnWidth(0, 72)
-        self._feed_table.setColumnWidth(2, 180)
+        self._feed_table.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeMode.Fixed)
+        self._feed_table.horizontalHeader().setSectionResizeMode(2, QHeaderView.ResizeMode.Stretch)
+        self._feed_table.horizontalHeader().setSectionResizeMode(3, QHeaderView.ResizeMode.Fixed)
+        self._feed_table.setColumnWidth(0, 160)
+        self._feed_table.setColumnWidth(1, 110)
+        self._feed_table.setColumnWidth(3, 220)
         self._feed_table.verticalHeader().setVisible(False)
         self._feed_table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
         self._feed_table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
@@ -978,14 +982,15 @@ class ImotScraperMainWindow(QMainWindow):
             Qt.AlignmentFlag.AlignCenter | Qt.AlignmentFlag.AlignVCenter
         )
         self._feed_table.setItem(hint_row, 0, hint_item)
-        self._feed_table.setSpan(hint_row, 0, 1, 3)
+        self._feed_table.setSpan(hint_row, 0, 1, 4)
 
     def _append_feed_row(self, event: dict) -> None:
         """Slot — called on main thread via FeedBridge signal."""
-        kind  = event["kind"]
-        title = event["title"]
-        price = event["price"]
-        link  = event.get("link", "")
+        kind        = event["kind"]
+        title       = event["title"]
+        price       = event["price"]
+        search_name = event.get("search_name", "")
+        link        = event.get("link", "")
 
         price_display = (
             f"{event['old_price']} → {price}"
@@ -1006,14 +1011,14 @@ class ImotScraperMainWindow(QMainWindow):
         self._feed_table.insertRow(row)
         self._feed_table.setRowHeight(row, T.ROW_H + 6)
 
-        for col, text in enumerate((kind, title, price_display)):
+        for col, text in enumerate((search_name, kind, title, price_display)):
             item = QTableWidgetItem(text)
             item.setBackground(QBrush(bg_color))
             item.setForeground(QBrush(fg_color))
             item.setFont(font)
             item.setTextAlignment(
                 Qt.AlignmentFlag.AlignCenter
-                if col in (0, 2)
+                if col in (0, 1, 2, 3)
                 else Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft
             )
             self._feed_table.setItem(row, col, item)
@@ -1160,7 +1165,7 @@ class ImotScraperMainWindow(QMainWindow):
         row_count = self._feed_table.rowCount()
         n_new = n_chg = 0
         for r in range(row_count):
-            kind_item = self._feed_table.item(r, 0)
+            kind_item = self._feed_table.item(r, 1)   # col 1 = "Type"
             if kind_item:
                 if kind_item.text() == "NEW":
                     n_new += 1
@@ -1171,9 +1176,6 @@ class ImotScraperMainWindow(QMainWindow):
         self._status_lbl.setStyleSheet(f"color: {T.FG_DIM}; font-size: 12px;")
         summary = f"✔  {n_new} new  |  {n_chg} changed"
         self._status_counts_lbl.setText(f"{summary}  ")
-
-        if n_new == 0 and n_chg == 0:
-            self._show_feed_placeholder()
 
         logging.info(f"Scraping completed — {n_new} new, {n_chg} changed.")
         self._run_btn.setEnabled(True)
