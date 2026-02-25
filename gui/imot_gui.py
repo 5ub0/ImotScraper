@@ -355,6 +355,9 @@ class ImotScraperGUI:
         price       = prop.get("current_price") or "—"
         description = prop.get("description") or "—"
 
+        # Full price history for the inline table (newest first)
+        price_history = self.controller.db.get_price_history(property_id)
+
         images = self.controller.db.get_images(property_id)
         if not images:
             messagebox.showinfo("No Images", f"No images stored for:\n{title}", parent=parent)
@@ -468,19 +471,60 @@ class ImotScraperGUI:
             opts = dict(text=value, anchor='nw', justify='left', wraplength=wrap) if wrap else dict(text=value, anchor='nw', justify='left')
             tk.Label(info_frame, **opts).grid(row=row, column=1, sticky='nw', pady=2)
 
-        _lbl(0, "Title:",       title)
-        _lbl(1, "Location:",    location)
-        _lbl(2, "Price:",       price)
+        _lbl(0, "Title:",    title)
+        _lbl(1, "Location:", location)
+        _lbl(2, "Price:",    price)
 
-        # Description may be long — use a small read-only Text widget
+        # ── Price history mini-table ──────────────────────────────────────────
+        past_prices = [r for r in price_history if r["price_status"] != "Current"]
+
+        if past_prices:
+            tk.Label(info_frame, text="Price history:", font=("Segoe UI", 9, "bold"),
+                     anchor='nw').grid(row=3, column=0, sticky='nw', padx=(0, 8), pady=2)
+
+            ph_frame = ttk.Frame(info_frame)
+            ph_frame.grid(row=3, column=1, sticky='w', pady=2)
+
+            # Match treeview background to the window background
+            win_bg = win.cget("bg")
+            ph_style = ttk.Style(win)
+            ph_style.configure("PriceHistory.Treeview",
+                               background=win_bg,
+                               fieldbackground=win_bg,
+                               rowheight=20)
+            ph_style.configure("PriceHistory.Treeview.Heading",
+                               background=win_bg,
+                               relief="flat")
+
+            visible_rows = min(len(past_prices), 4)
+            ph_tree = ttk.Treeview(ph_frame, columns=("date", "price"),
+                                   show="headings", height=visible_rows,
+                                   style="PriceHistory.Treeview")
+            ph_tree.heading("date",  text="Date")
+            ph_tree.heading("price", text="Price")
+            ph_tree.column("date",  width=130, stretch=False, anchor="center")
+            ph_tree.column("price", width=100, stretch=False, anchor="center")
+
+            for rec in past_prices:
+                date_str = rec["recorded_at"][:16] if rec.get("recorded_at") else "—"
+                ph_tree.insert("", tk.END, values=(date_str, rec["price"]))
+
+            ph_tree.grid(row=0, column=0, sticky='ew')
+
+            if len(past_prices) > 4:
+                ph_vsb = ttk.Scrollbar(ph_frame, orient="vertical", command=ph_tree.yview)
+                ph_tree.configure(yscrollcommand=ph_vsb.set)
+                ph_vsb.grid(row=0, column=1, sticky='ns')
+
+        # ── Description ──────────────────────────────────────────────────────
         tk.Label(info_frame, text="Description:", font=("Segoe UI", 9, "bold"),
-                 anchor='nw').grid(row=3, column=0, sticky='nw', padx=(0, 8), pady=2)
+                 anchor='nw').grid(row=4, column=0, sticky='nw', padx=(0, 8), pady=2)
         desc_box = tk.Text(info_frame, height=10, wrap='word',
                            relief='flat', bg=win.cget('bg'),
                            font=("Segoe UI", 9), state='normal')
         desc_box.insert('1.0', description)
         desc_box.config(state='disabled')
-        desc_box.grid(row=3, column=1, sticky='ew', pady=2)
+        desc_box.grid(row=4, column=1, sticky='ew', pady=2)
 
         show(0)
         win.focus_set()
