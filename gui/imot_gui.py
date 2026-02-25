@@ -19,121 +19,242 @@ load_dotenv()
 
 # --- CustomText and TextHandler classes ---
 class CustomText(scrolledtext.ScrolledText):
-    """A scrolled text widget subclassed to handle logging and clickable URLs."""
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        self.tag_config("url", foreground="blue", underline=1)
-        self.bind("<Button-1>", self._click)
-        
-    def _click(self, event):
-        """Opens a URL in a browser if clicked within the widget."""
-        for tag in self.tag_names("@%d,%d" % (event.x, event.y)):
-            if tag == "url":
-                start = "@%d,%d" % (event.x, event.y)
-                line_content = self.get(f"{start} linestart", f"{start} lineend")
-                match = re.search(r'http[s]?://(?:[a-zA-Z]|[0-9]|[$-_@.&+]|[!*\\(\\),]|(?:%[0-9-fA-F][0-9-fA-F]))+', line_content)
-                if match:
-                    webbrowser.open(match.group(0))
-                break
+    """Kept as a no-op stub — no longer used for logging but retained to avoid
+    removing the scrolledtext import which may be used by other code."""
+    pass
 
-class TextHandler(logging.Handler):
+
+class ResultsFeedHandler(logging.Handler):
     """
-    A logging handler that routes Python log records to a Tkinter Text widget.
+    Intercepts scraper log lines that announce new listings or price changes
+    and converts them into structured dicts posted to a thread-safe queue.
 
-    Log messages are collected in a thread-safe queue and flushed to the widget
-    in batches every 100 ms via a single recurring root.after() timer.  This
-    prevents the Tkinter event loop from being flooded when many messages arrive
-    in quick succession (e.g. scraping 200+ listings).
+    Line formats emitted by the scraper:
+      "New listing: <title> | price: <price> | <link>"
+      "Price change: <title> <old> → <new>"
+
+    Everything else is ignored — it continues to the TextHandler via the
+    normal logger propagation chain.
     """
-    def __init__(self, text_widget, root):
-        logging.Handler.__init__(self)
-        self.text_widget = text_widget
-        self.root = root
-        self._queue = queue.Queue()
-        self._flush_scheduled = False
 
-    def emit(self, record):
-        msg = self.format(record) + '\n'
-        self._queue.put(msg)
-        # Schedule a flush only if one isn't already pending — avoids
-        # queuing thousands of individual after() callbacks.
-        if not self._flush_scheduled:
-            self._flush_scheduled = True
-            try:
-                self.root.after(100, self._flush)
-            except RuntimeError:
-                pass  # root destroyed (app closing)
+    # Patterns must match exactly what imotBgScraper logs
+    _RE_NEW     = re.compile(r"New listing: (.+?) \| price: (.+?) \| (https?://\S+)")
+    _RE_CHANGED = re.compile(r"Price change: (.+?) (\S+) → (\S+)")
 
-    def _flush(self):
-        """Drain the queue and append all pending messages in one batch."""
-        self._flush_scheduled = False
-        try:
-            msgs = []
-            while True:
-                try:
-                    msgs.append(self._queue.get_nowait())
-                except queue.Empty:
-                    break
+    def __init__(self):
+        super().__init__()
+        self._queue: queue.Queue = queue.Queue()
 
-            if not msgs:
-                return
+    def emit(self, record: logging.LogRecord) -> None:
+        msg = record.getMessage()
+        m = self._RE_NEW.search(msg)
+        if m:
+            self._queue.put({
+                "kind":  "NEW",
+                "title": m.group(1).strip(),
+                "price": m.group(2).strip(),
+                "link":  m.group(3).strip(),
+            })
+            return
+        m = self._RE_CHANGED.search(msg)
+        if m:
+            self._queue.put({
+                "kind":      "CHANGED",
+                "title":     m.group(1).strip(),
+                "old_price": m.group(2).strip(),
+                "price":     m.group(3).strip(),
+                "link":      "",
+            })
 
-            self.text_widget.insert(tk.END, ''.join(msgs))
-
-            # Tag URLs in the newly appended text
-            for msg in msgs:
-                if 'http' in msg:
-                    line_start = self.text_widget.get("end-2c linestart", "end-2c lineend")
-                    url_start_pos = line_start.find('http')
-                    if url_start_pos != -1:
-                        start_idx = f"end-2c linestart+{url_start_pos}c"
-                        end_idx   = f"end-2c linestart+{len(line_start)}c"
-                        self.text_widget.tag_add("url", start_idx, end_idx)
-
-            self.text_widget.see(tk.END)
-
-            # If more messages arrived while we were flushing, schedule another flush
-            if not self._queue.empty():
-                self._flush_scheduled = True
-                self.root.after(100, self._flush)
-
-        except tk.TclError:
-            pass  # widget destroyed (app closing)
 
 # --- Main GUI Class ---
 
 class ImotScraperGUI:
+
+    # ── Colour palette ───────────────────────────────────────────────────────
+    BG       = "#1e1e1e"
+    BG2      = "#2b2b2b"
+    BG3      = "#333333"
+    FG       = "#e8e8e8"
+    FG_DIM   = "#888888"
+    ACCENT   = "#0d7aff"
+    GREEN    = "#4caf50"
+    ORANGE   = "#ff8c42"
+    YELLOW   = "#f0c040"
+    FONT     = ("Segoe UI", 9)
+    FONT_B   = ("Segoe UI", 9, "bold")
+    FONT_LG  = ("Segoe UI", 11, "bold")
+
     def __init__(self, root, controller=None):
         self.root = root
         self.root.title("Imot.bg Scraper")
-        self.root.geometry("950x850") 
-        self.root.configure(padx=10, pady=10)
-        
+        self.root.geometry("950x850")
+        self.root.configure(padx=10, pady=10, bg=self.BG)
+
         self.controller = controller
         self.urls = []
         self.data_dir = 'data'
         if not os.path.exists(self.data_dir):
             os.makedirs(self.data_dir)
-            
+
         self.scheduler_running = False
         self.file_view_button_frame = None
         self._search_ids = {}  # treeview item_id → DB search id
+        self._gallery_win: tk.Toplevel | None = None   # single open gallery window
 
         self.root.protocol("WM_DELETE_WINDOW", self.on_closing)
-
+        self._apply_dark_theme()
+        self._set_dark_titlebar(self.root)
         self.setup_gui()
+
+    def _apply_dark_theme(self):
+        """Configure ttk styles for a dark, modern look."""
+        s = ttk.Style(self.root)
+        s.theme_use("clam")
+
+        # General
+        s.configure(".",
+                    background=self.BG, foreground=self.FG,
+                    font=self.FONT,
+                    troughcolor=self.BG2, bordercolor=self.BG3,
+                    darkcolor=self.BG2, lightcolor=self.BG3,
+                    insertcolor=self.FG, fieldbackground=self.BG2)
+
+        # Frames & LabelFrames
+        s.configure("TFrame",      background=self.BG)
+        s.configure("TLabelframe", background=self.BG, bordercolor=self.BG3)
+        s.configure("TLabelframe.Label", background=self.BG, foreground=self.FG_DIM,
+                    font=self.FONT_B)
+
+        # Labels
+        s.configure("TLabel", background=self.BG, foreground=self.FG, font=self.FONT)
+
+        # Entries
+        s.configure("TEntry", fieldbackground=self.BG2, foreground=self.FG,
+                    insertcolor=self.FG, bordercolor=self.BG3)
+
+        # Buttons
+        s.configure("TButton",
+                    background=self.BG3, foreground=self.FG,
+                    bordercolor=self.BG3, focusthickness=0,
+                    padding=(8, 4), font=self.FONT_B)
+        s.map("TButton",
+              background=[("active", self.ACCENT), ("disabled", self.BG2)],
+              foreground=[("disabled", self.FG_DIM)])
+
+        # Treeview
+        s.configure("Treeview",
+                    background=self.BG2, foreground=self.FG,
+                    fieldbackground=self.BG2, rowheight=24,
+                    bordercolor=self.BG3, font=self.FONT)
+        s.configure("Treeview.Heading",
+                    background=self.BG3, foreground=self.FG,
+                    relief="flat", font=self.FONT_B)
+        s.map("Treeview",
+              background=[("selected", self.ACCENT)],
+              foreground=[("selected", "#ffffff")])
+        s.map("Treeview.Heading",
+              background=[("active", self.BG3)])
+
+        # Scrollbars — slim, flat, dark
+        s.configure("Slim.Vertical.TScrollbar",
+                    background=self.BG3, troughcolor=self.BG2,
+                    arrowcolor=self.BG3, bordercolor=self.BG2,
+                    width=8, arrowsize=0)
+        s.configure("Slim.Horizontal.TScrollbar",
+                    background=self.BG3, troughcolor=self.BG2,
+                    arrowcolor=self.BG3, bordercolor=self.BG2,
+                    width=8, arrowsize=0)
+        s.map("Slim.Vertical.TScrollbar",
+              background=[("active", self.ACCENT), ("pressed", self.ACCENT)])
+        s.map("Slim.Horizontal.TScrollbar",
+              background=[("active", self.ACCENT), ("pressed", self.ACCENT)])
+
+        # PanedWindow
+        s.configure("TPanedwindow", background=self.BG)
+
+        # Canvas / Entry inside dialogs
+        self.root.option_add("*Background",   self.BG)
+        self.root.option_add("*Foreground",   self.FG)
+        self.root.option_add("*Font",         self.FONT)
+        self.root.option_add("*Entry.Background",   self.BG2)
+        self.root.option_add("*Entry.Foreground",   self.FG)
+        self.root.option_add("*Text.Background",    self.BG2)
+        self.root.option_add("*Text.Foreground",    self.FG)
+        self.root.option_add("*Canvas.Background",  self.BG2)
         
+    def _vsb(self, parent, command):
+        """Return a slim dark vertical scrollbar."""
+        return ttk.Scrollbar(parent, orient="vertical",
+                             command=command, style="Slim.Vertical.TScrollbar")
+
+    def _hsb(self, parent, command):
+        """Return a slim dark horizontal scrollbar."""
+        return ttk.Scrollbar(parent, orient="horizontal",
+                             command=command, style="Slim.Horizontal.TScrollbar")
+
+    @staticmethod
+    def _set_dark_titlebar(window: tk.Wm) -> None:
+        """Apply the Windows dark-mode title bar to *window* (root or Toplevel).
+
+        Uses DWMWA_USE_IMMERSIVE_DARK_MODE (attribute 20) — available on
+        Windows 10 build 18985+ and Windows 11.  Silently ignored elsewhere.
+        """
+        try:
+            import ctypes
+            import ctypes.wintypes
+            hwnd = ctypes.windll.user32.GetParent(window.winfo_id())
+            if hwnd == 0:                       # winfo_id() *is* the HWND on Windows
+                hwnd = window.winfo_id()
+            DWMWA_USE_IMMERSIVE_DARK_MODE = 20
+            value = ctypes.c_int(1)
+            ctypes.windll.dwmapi.DwmSetWindowAttribute(
+                hwnd,
+                DWMWA_USE_IMMERSIVE_DARK_MODE,
+                ctypes.byref(value),
+                ctypes.sizeof(value),
+            )
+        except Exception:
+            pass  # non-Windows or older Windows — ignore silently
+
     def setup_logging(self):
-        """Configures Python's logging to route messages to the GUI's log text widget."""
-        handler = TextHandler(self.log_text, self.root)
-        formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
-        handler.setFormatter(formatter)
-        
+        """Attaches the feed handler so new/changed scraper events reach the results feed."""
+        self._feed_handler = ResultsFeedHandler()
         root_logger = logging.getLogger()
-        if not any(isinstance(h, TextHandler) for h in root_logger.handlers):
-            root_logger.addHandler(handler)
-        
+        if not any(isinstance(h, ResultsFeedHandler) for h in root_logger.handlers):
+            root_logger.addHandler(self._feed_handler)
         root_logger.setLevel(logging.INFO)
+        self._flush_feed()   # start the recurring drain loop
+
+    def _flush_feed(self):
+        """Drain the ResultsFeedHandler queue and insert rows into the feed Treeview."""
+        try:
+            while True:
+                try:
+                    event = self._feed_handler._queue.get_nowait()
+                except queue.Empty:
+                    break
+
+                kind  = event["kind"]
+                title = event["title"]
+                price = event["price"]
+                link  = event.get("link", "")
+
+                if kind == "CHANGED":
+                    price_display = f"{event['old_price']} → {price}"
+                else:
+                    price_display = price
+
+                iid = self._feed_tree.insert(
+                    "", tk.END,
+                    values=(kind, title, price_display),
+                    tags=(kind,)
+                )
+                self._feed_link_map[iid] = link
+                self._feed_tree.see(iid)
+        except tk.TclError:
+            return
+        self.root.after(200, self._flush_feed)
 
     def setup_gui(self):
         
@@ -185,8 +306,8 @@ class ImotScraperGUI:
         self.tree.column('Emails', width=200)
         self.tree.column('URL', width=350)
         
-        tree_vsb = ttk.Scrollbar(tree_frame, orient="vertical", command=self.tree.yview)
-        tree_hsb = ttk.Scrollbar(tree_frame, orient="horizontal", command=self.tree.xview)
+        tree_vsb = self._vsb(tree_frame, self.tree.yview)
+        tree_hsb = self._hsb(tree_frame, self.tree.xview)
         self.tree.configure(yscrollcommand=tree_vsb.set, xscrollcommand=tree_hsb.set)
         
         self.tree.grid(row=0, column=0, sticky='nsew')
@@ -212,16 +333,60 @@ class ImotScraperGUI:
         self.file_view_button_frame = ttk.Frame(file_view_frame)
         self.file_view_button_frame.pack(fill=tk.X, padx=5, pady=5)
         
-        # Lower section (Log output)
+        # ── Lower section — scrape feed + raw log ────────────────────────────
         lower_section = ttk.Frame(paned)
-        
-        log_frame = ttk.LabelFrame(lower_section, text="Log Output", padding=10)
-        log_frame.pack(fill=tk.BOTH, expand=True)
-        
-        self.log_text = CustomText(log_frame, height=15)
-        self.log_text.pack(fill=tk.BOTH, expand=True)
-        
-        paned.add(upper_section, weight=40) 
+
+        # Status bar: shows which search is running / last run summary
+        self._status_bar = tk.Frame(lower_section, bg=self.BG2, pady=6)
+        self._status_bar.pack(fill=tk.X)
+        self._status_label = tk.Label(
+            self._status_bar, text="  No scrape run yet",
+            bg=self.BG2, fg=self.FG_DIM,
+            font=self.FONT, anchor="w"
+        )
+        self._status_label.pack(side=tk.LEFT, padx=10)
+        self._status_counts = tk.Label(
+            self._status_bar, text="",
+            bg=self.BG2, fg=self.FG_DIM,
+            font=self.FONT_B, anchor="e"
+        )
+        self._status_counts.pack(side=tk.RIGHT, padx=10)
+
+        # Results feed Treeview
+        feed_frame = ttk.LabelFrame(lower_section, text="Scrape Results Feed", padding=(6, 4))
+        feed_frame.pack(fill=tk.BOTH, expand=True, pady=(4, 2))
+        feed_frame.rowconfigure(0, weight=1)
+        feed_frame.columnconfigure(0, weight=1)
+
+        feed_cols = ("kind", "title", "price")
+        self._feed_tree = ttk.Treeview(feed_frame, columns=feed_cols,
+                                       show="headings", height=8)
+        self._feed_tree.heading("kind",  text="Type")
+        self._feed_tree.heading("title", text="Title")
+        self._feed_tree.heading("price", text="Price")
+
+        self._feed_tree.column("kind",  width=80,  stretch=False, anchor="center")
+        self._feed_tree.column("title", width=440, stretch=True)
+        self._feed_tree.column("price", width=130, stretch=False, anchor="center")
+
+        self._feed_tree.tag_configure("NEW",      foreground=self.GREEN)
+        self._feed_tree.tag_configure("CHANGED",  foreground=self.ORANGE)
+        self._feed_tree.tag_configure("EMPTY",    foreground=self.FG_DIM)
+
+        feed_vsb = self._vsb(feed_frame, self._feed_tree.yview)
+        self._feed_tree.configure(yscrollcommand=feed_vsb.set)
+        self._feed_tree.grid(row=0, column=0, sticky="nsew")
+        feed_vsb.grid(row=0, column=1, sticky="ns")
+
+        # map feed iid → property link (so we can look up by link on click)
+        self._feed_link_map: dict = {}
+
+        self._feed_tree.bind("<Double-1>", self._on_feed_click)
+
+        # Show placeholder until first scrape
+        self._show_feed_placeholder()
+
+        paned.add(upper_section, weight=40)
         paned.add(lower_section, weight=60)
         
         self.setup_logging()
@@ -240,6 +405,7 @@ class ImotScraperGUI:
         view_window.minsize(900, 400)
         view_window.rowconfigure(0, weight=1)
         view_window.columnconfigure(0, weight=1)
+        self._set_dark_titlebar(view_window)
 
         main_frame = ttk.Frame(view_window)
         main_frame.grid(row=0, column=0, sticky='nsew', padx=5, pady=5)
@@ -271,8 +437,8 @@ class ImotScraperGUI:
         tree.tag_configure('Active',   foreground='green')
         tree.tag_configure('Inactive', foreground='red')
 
-        vsb = ttk.Scrollbar(main_frame, orient="vertical",   command=tree.yview)
-        hsb = ttk.Scrollbar(main_frame, orient="horizontal", command=tree.xview)
+        vsb = self._vsb(main_frame, tree.yview)
+        hsb = self._hsb(main_frame, tree.xview)
         tree.configure(yscrollcommand=vsb.set, xscrollcommand=hsb.set)
         tree.grid(row=0, column=0, sticky='nsew')
         vsb.grid(row=0, column=1, sticky='ns')
@@ -371,7 +537,16 @@ class ImotScraperGUI:
         win.rowconfigure(1, weight=1)
         win.columnconfigure(0, weight=1)
 
-        # Navigation state
+        # ── Single window — close any previously open gallery ─────────────────
+        if self._gallery_win and self._gallery_win.winfo_exists():
+            self._gallery_win.destroy()
+        self._gallery_win = win
+
+        # Dark OS title bar + stay on top
+        self._set_dark_titlebar(win)
+        win.attributes("-topmost", True)
+        win.protocol("WM_DELETE_WINDOW", lambda: self._close_gallery(win))
+
         idx = [0]
 
         # ── Nav bar ──────────────────────────────────────────────────────────
@@ -471,7 +646,20 @@ class ImotScraperGUI:
             opts = dict(text=value, anchor='nw', justify='left', wraplength=wrap) if wrap else dict(text=value, anchor='nw', justify='left')
             tk.Label(info_frame, **opts).grid(row=row, column=1, sticky='nw', pady=2)
 
-        _lbl(0, "Title:",    title)
+        # ── Title row — clickable hyperlink ──────────────────────────────────
+        tk.Label(info_frame, text="Title:", font=("Segoe UI", 9, "bold"),
+                 anchor='nw', justify='left').grid(
+            row=0, column=0, sticky='nw', padx=(0, 8), pady=2)
+        link_url = prop.get("link") or ""
+        title_lbl = tk.Label(
+            info_frame, text=title, anchor='nw', justify='left',
+            fg=self.ACCENT, cursor="hand2",
+            font=("Segoe UI", 9, "underline"), wraplength=500
+        )
+        title_lbl.grid(row=0, column=1, sticky='nw', pady=2)
+        if link_url:
+            title_lbl.bind("<Button-1>", lambda e: webbrowser.open(link_url))
+
         _lbl(1, "Location:", location)
         _lbl(2, "Price:",    price)
 
@@ -512,7 +700,7 @@ class ImotScraperGUI:
             ph_tree.grid(row=0, column=0, sticky='ew')
 
             if len(past_prices) > 4:
-                ph_vsb = ttk.Scrollbar(ph_frame, orient="vertical", command=ph_tree.yview)
+                ph_vsb = self._vsb(ph_frame, ph_tree.yview)
                 ph_tree.configure(yscrollcommand=ph_vsb.set)
                 ph_vsb.grid(row=0, column=1, sticky='ns')
 
@@ -528,6 +716,49 @@ class ImotScraperGUI:
 
         show(0)
         win.focus_set()
+
+    def _show_feed_placeholder(self):
+        """Insert a dim placeholder row when the feed has no results."""
+        self._feed_tree.insert("", tk.END,
+                               values=("", "Run a scrape to see new listings and price changes here.", ""),
+                               tags=("EMPTY",))
+
+    def _on_feed_click(self, event):
+        """Handle double-clicks on the scrape results feed to open the gallery."""
+        item = self._feed_tree.identify_row(event.y)
+        if not item:
+            return
+        # Ignore the placeholder row
+        if "EMPTY" in self._feed_tree.item(item)["tags"]:
+            return
+        self._open_gallery_for_feed_item(item)
+
+    def _open_gallery_for_feed_item(self, iid: str):
+        """Look up property by link stored in _feed_link_map and open the gallery."""
+        if not self.controller or not self.controller.db:
+            return
+        link = self._feed_link_map.get(iid, "")
+        if not link:
+            messagebox.showinfo("No link", "No URL stored for this entry.", parent=self.root)
+            return
+        prop = self.controller.db.get_property_by_link(link)
+        if not prop:
+            messagebox.showinfo("Not found",
+                                "Property details not in the database yet.\n"
+                                "It may still be saving — try again in a moment.",
+                                parent=self.root)
+            return
+        ph = self.controller.db.get_price_history(prop["id"])
+        prop["current_price"] = next(
+            (r["price"] for r in ph if r["price_status"] == "Current"), "—"
+        )
+        self._open_gallery(self.root, prop)
+
+    def _close_gallery(self, win: tk.Toplevel) -> None:
+        """Destroy the gallery window and clear the singleton reference."""
+        if self._gallery_win is win:
+            self._gallery_win = None
+        win.destroy()
 
     def load_file_view_buttons(self, button_frame):
         """Rebuild the 'View Results' buttons from the searches in the DB."""
@@ -581,6 +812,7 @@ class ImotScraperGUI:
         dialog.geometry("500x350")
         dialog.minsize(450, 300) 
         dialog.transient(self.root) 
+        self._set_dark_titlebar(dialog)
         
         dialog.rowconfigure(0, weight=1)
         dialog.columnconfigure(0, weight=1)
@@ -634,7 +866,7 @@ class ImotScraperGUI:
         email_canvas = tk.Canvas(email_frame_container, height=100)
         email_canvas.pack(side="left", fill="both", expand=True)
         
-        email_scrollbar = ttk.Scrollbar(email_frame_container, orient="vertical", command=email_canvas.yview)
+        email_scrollbar = self._vsb(email_frame_container, email_canvas.yview)
         email_scrollbar.pack(side="right", fill="y")
         
         email_canvas.configure(yscrollcommand=email_scrollbar.set)
@@ -847,7 +1079,15 @@ class ImotScraperGUI:
                 )
                 return
 
-        self.log_text.delete(1.0, tk.END)
+        # Clear the feed and reset status bar
+        self._feed_tree.delete(*self._feed_tree.get_children())
+        self._feed_link_map.clear()
+        names = "  |  ".join(s["search_name"] for s in searches)
+        self._status_label.config(
+            text=f"  ⏳  Running: {names}", fg=self.YELLOW
+        )
+        self._status_counts.config(text="")
+
         logging.info(f"Starting scraper for {len(searches)} search(es)...")
         self.scrape_btn.config(state=tk.DISABLED, text="Scraping...")
         self.scraper_thread = threading.Thread(target=self.run_scraper, daemon=True)
@@ -860,31 +1100,36 @@ class ImotScraperGUI:
             self.root.after(500, self._check_scraper_thread)
         else:
             self.scrape_btn.config(state=tk.NORMAL, text="Run Scraping Now")
-    
+
     def run_scraper(self):
         """Executes the scraper job (on-demand)."""
         import traceback as _tb
         try:
             self.root.after(0, lambda: logging.info("Starting on-demand scraper run..."))
-            print(f"[GUI] Starting scraper thread execution")
 
             if not self.controller:
                 error_msg = "Controller not initialized - cannot run scraper"
                 self.root.after(0, lambda: logging.error(error_msg))
                 return
 
-            print(f"[GUI] Running scraper via controller...")
             success = self.controller.run_scraper()
-            print(f"[GUI] Scraper completed with result: {success}")
 
             def finalize_scraper_run(result):
                 try:
-                    logging.info("Sending reports...")
                     self.controller.send_email_reports(result)
-                    logging.info("Scraping completed! Check the output above for results.")
+                    # Count feed rows for the summary
+                    rows  = self._feed_tree.get_children()
+                    tags  = [self._feed_tree.item(r)["tags"][0] for r in rows]
+                    n_new = tags.count("NEW")
+                    n_chg = tags.count("CHANGED")
+                    summary = f"✔  {n_new} new  |  {n_chg} changed"
+                    self._status_label.config(text="  Last run finished", fg=self.FG_DIM)
+                    self._status_counts.config(text=f"{summary}  ")
+                    if n_new == 0 and n_chg == 0:
+                        self._show_feed_placeholder()
+                    logging.info(f"Scraping completed — {n_new} new, {n_chg} changed.")
                     self.refresh_file_view()
                 except Exception as e:
-                    print(f"[GUI] Error during finalization: {e}")
                     logging.error(f"Error finalizing scraper run: {e}")
                     _tb.print_exc()
 
@@ -893,7 +1138,6 @@ class ImotScraperGUI:
         except Exception as e:
             error_msg = f"Critical Error during on-demand run: {str(e)}"
             self.root.after(0, lambda msg=error_msg: logging.error(msg))
-            print(f"[GUI] UNCAUGHT EXCEPTION in scraper thread:")
             _tb.print_exc()
             
 
