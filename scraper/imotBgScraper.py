@@ -93,17 +93,18 @@ class ImotScraper:
                     existing_price, existing_title, existing_location = known.get(record_id, (None, None, None))
 
                     if existing_price is None:
-                        # Brand new listing — fetch detail page for clean title + location
-                        title, location = self._extract_title_and_location(session, link)
+                        # Brand new listing — fetch detail page for clean title, location, description
+                        title, location, description = self._extract_title_and_location(session, link)
                         if not title:
                             title = list_title
                         is_new = True
                         new_count += 1
                         self.logger.info(f"New listing: {title} | price: {price_text} | {link}")
                     elif existing_price != price_text:
-                        # Price changed — reuse stored title/location, no detail fetch needed
+                        # Price changed — reuse stored title/location/description, no detail fetch needed
                         title = existing_title or list_title
                         location = existing_location or ""
+                        description = None  # None → COALESCE keeps existing value in DB
                         is_new = False
                         changed_count += 1
                         self.logger.info(f"Price change: {title} {existing_price} → {price_text}")
@@ -116,6 +117,7 @@ class ImotScraper:
                         search_id=search_id,
                         title=title,
                         location=location,
+                        description=description,
                         link=link,
                         price=price_text,
                         is_new=is_new,
@@ -254,37 +256,25 @@ class ImotScraper:
             self.logger.warning(f"Could not fetch detail page {url}: {e}")
             return None
 
-    def _extract_title_and_location(self, session: requests.Session, url: str) -> Tuple[str, str]:
+    def _extract_title_and_location(self, session: requests.Session, url: str) -> Tuple[str, str, str]:
         """
-        Fetch the property detail page and extract the clean title and full location
-        from the `.advHeader` block.
+        Fetch the property detail page and extract the clean title, full location,
+        and description text.
 
-        Returns (title, location) — both empty strings on failure.
-
-        HTML structure targeted:
-          <div class="advHeader">
-            <div class="title">Дава под Наем 3-СТАЕН <div class="btns">...</div></div>
-            <div class="info">
-              <div class="location">
-                град София, Драгалевци
-                <div style="font-weight:normal;">к-с Мирамонте</div>
-              </div>
-            </div>
-          </div>
+        Returns (title, location, description) — all empty strings on failure.
         """
         soup = self._fetch_detail(session, url)
         if not soup:
-            return "", ""
+            return "", "", ""
 
         adv_header = soup.find("div", class_="advHeader")
         if not adv_header:
-            return "", ""
+            return "", "", ""
 
         # --- Title ---
         title_div = adv_header.find("div", class_="title")
         title = ""
         if title_div:
-            # Remove the nested .btns div so we only get the title text node
             btns = title_div.find("div", class_="btns")
             if btns:
                 btns.decompose()
@@ -294,16 +284,23 @@ class ImotScraper:
         location = ""
         location_div = adv_header.find("div", class_="location")
         if location_div:
-            # Collect all text parts (main line + any sub-divs like к-с Мирамонте)
             parts = []
             for node in location_div.descendants:
                 if isinstance(node, str):
                     text = node.strip()
                     if text:
                         parts.append(text)
-            location = ", ".join(dict.fromkeys(parts))  # deduplicate while preserving order
+            location = ", ".join(dict.fromkeys(parts))
 
-        return title, location
+        # --- Description ---
+        description = ""
+        more_info = soup.find("div", class_="moreInfo")
+        if more_info:
+            text_div = more_info.find("div", class_="text")
+            if text_div:
+                description = text_div.get_text(separator='\n', strip=True)
+
+        return title, location, description
 
     def _extract_price(self, price_div: BeautifulSoup) -> Optional[str]:
         """Extract price information from price div"""

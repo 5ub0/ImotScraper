@@ -63,6 +63,7 @@ class DatabaseManager:
                     search_id   INTEGER NOT NULL REFERENCES searches(id) ON DELETE CASCADE,
                     title       TEXT,
                     location    TEXT,
+                    description TEXT,
                     link        TEXT,
                     status      TEXT    NOT NULL DEFAULT 'Active',
                     first_seen  DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -233,6 +234,7 @@ class DatabaseManager:
         search_id: int,
         title: str,
         location: str,
+        description: str,
         link: str,
         price: str,
         is_new: bool,
@@ -240,21 +242,24 @@ class DatabaseManager:
         """
         Insert a new property or update an existing one.
         Records a price_history row ONLY when the property is new or the price changed.
+        Description is stored on first fetch and never overwritten (changes are rare
+        and the detail page is only fetched for new listings).
         Returns the property id.
         """
         with self._get_connection() as conn:
             cursor = conn.cursor()
 
             cursor.execute("""
-                INSERT INTO properties (record_id, search_id, title, location, link, status, last_seen)
-                VALUES (?, ?, ?, ?, ?, 'Active', CURRENT_TIMESTAMP)
+                INSERT INTO properties (record_id, search_id, title, location, description, link, status, last_seen)
+                VALUES (?, ?, ?, ?, ?, ?, 'Active', CURRENT_TIMESTAMP)
                 ON CONFLICT(record_id, search_id) DO UPDATE SET
-                    title     = excluded.title,
-                    location  = excluded.location,
-                    link      = excluded.link,
-                    status    = 'Active',
-                    last_seen = CURRENT_TIMESTAMP
-            """, (record_id, search_id, title, location, link))
+                    title       = excluded.title,
+                    location    = excluded.location,
+                    description = COALESCE(excluded.description, properties.description),
+                    link        = excluded.link,
+                    status      = 'Active',
+                    last_seen   = CURRENT_TIMESTAMP
+            """, (record_id, search_id, title, location, description, link))
 
             cursor.execute(
                 "SELECT id FROM properties WHERE record_id = ? AND search_id = ?",

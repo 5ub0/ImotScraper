@@ -7,6 +7,7 @@ import tkinter as tk
 from tkinter import ttk, scrolledtext, filedialog, messagebox
 import logging
 import threading
+import queue
 import csv
 import webbrowser
 import os
@@ -36,28 +37,68 @@ class CustomText(scrolledtext.ScrolledText):
                 break
 
 class TextHandler(logging.Handler):
-    """A logging handler to redirect Python logs to the CustomText widget."""
-    def __init__(self, text_widget):
+    """
+    A logging handler that routes Python log records to a Tkinter Text widget.
+
+    Log messages are collected in a thread-safe queue and flushed to the widget
+    in batches every 100 ms via a single recurring root.after() timer.  This
+    prevents the Tkinter event loop from being flooded when many messages arrive
+    in quick succession (e.g. scraping 200+ listings).
+    """
+    def __init__(self, text_widget, root):
         logging.Handler.__init__(self)
         self.text_widget = text_widget
+        self.root = root
+        self._queue = queue.Queue()
+        self._flush_scheduled = False
 
     def emit(self, record):
         msg = self.format(record) + '\n'
-        # Always schedule the widget update on the main thread (thread-safe)
-        self.text_widget.after(0, self._append, msg)
+        self._queue.put(msg)
+        # Schedule a flush only if one isn't already pending — avoids
+        # queuing thousands of individual after() callbacks.
+        if not self._flush_scheduled:
+            self._flush_scheduled = True
+            try:
+                self.root.after(100, self._flush)
+            except RuntimeError:
+                pass  # root destroyed (app closing)
 
-    def _append(self, msg):
-        self.text_widget.insert(tk.END, msg)
+    def _flush(self):
+        """Drain the queue and append all pending messages in one batch."""
+        self._flush_scheduled = False
+        try:
+            msgs = []
+            while True:
+                try:
+                    msgs.append(self._queue.get_nowait())
+                except queue.Empty:
+                    break
 
-        if 'http' in msg:
-            line_start = self.text_widget.get("end-2c linestart", "end-2c lineend")
-            url_start_pos = line_start.find('http')
-            if url_start_pos != -1:
-                start_idx = f"end-2c linestart+{url_start_pos}c"
-                end_idx = f"end-2c linestart+{len(line_start)}c"
-                self.text_widget.tag_add("url", start_idx, end_idx)
+            if not msgs:
+                return
 
-        self.text_widget.see(tk.END)
+            self.text_widget.insert(tk.END, ''.join(msgs))
+
+            # Tag URLs in the newly appended text
+            for msg in msgs:
+                if 'http' in msg:
+                    line_start = self.text_widget.get("end-2c linestart", "end-2c lineend")
+                    url_start_pos = line_start.find('http')
+                    if url_start_pos != -1:
+                        start_idx = f"end-2c linestart+{url_start_pos}c"
+                        end_idx   = f"end-2c linestart+{len(line_start)}c"
+                        self.text_widget.tag_add("url", start_idx, end_idx)
+
+            self.text_widget.see(tk.END)
+
+            # If more messages arrived while we were flushing, schedule another flush
+            if not self._queue.empty():
+                self._flush_scheduled = True
+                self.root.after(100, self._flush)
+
+        except tk.TclError:
+            pass  # widget destroyed (app closing)
 
 # --- Main GUI Class ---
 
@@ -84,7 +125,7 @@ class ImotScraperGUI:
         
     def setup_logging(self):
         """Configures Python's logging to route messages to the GUI's log text widget."""
-        handler = TextHandler(self.log_text)
+        handler = TextHandler(self.log_text, self.root)
         formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
         handler.setFormatter(formatter)
         
