@@ -4,136 +4,186 @@ Delegates business logic to the controller module.
 """
 
 import tkinter as tk
-from tkinter import ttk, scrolledtext, filedialog, messagebox
+from tkinter import ttk, filedialog, messagebox
 import logging
 import threading
 import queue
-import csv
 import webbrowser
 import os
 import re
-import time
 from dotenv import load_dotenv
+
+from gui.theme import AppTheme, apply_theme, RoundedButton
 
 load_dotenv()
 
-# --- CustomText and TextHandler classes ---
-class CustomText(scrolledtext.ScrolledText):
-    """A scrolled text widget subclassed to handle logging and clickable URLs."""
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        self.tag_config("url", foreground="blue", underline=1)
-        self.bind("<Button-1>", self._click)
-        
-    def _click(self, event):
-        """Opens a URL in a browser if clicked within the widget."""
-        for tag in self.tag_names("@%d,%d" % (event.x, event.y)):
-            if tag == "url":
-                start = "@%d,%d" % (event.x, event.y)
-                line_content = self.get(f"{start} linestart", f"{start} lineend")
-                match = re.search(r'http[s]?://(?:[a-zA-Z]|[0-9]|[$-_@.&+]|[!*\\(\\),]|(?:%[0-9-fA-F][0-9-fA-F]))+', line_content)
-                if match:
-                    webbrowser.open(match.group(0))
-                break
 
-class TextHandler(logging.Handler):
+
+class ResultsFeedHandler(logging.Handler):
     """
-    A logging handler that routes Python log records to a Tkinter Text widget.
+    Intercepts scraper log lines that announce new listings or price changes
+    and converts them into structured dicts posted to a thread-safe queue.
 
-    Log messages are collected in a thread-safe queue and flushed to the widget
-    in batches every 100 ms via a single recurring root.after() timer.  This
-    prevents the Tkinter event loop from being flooded when many messages arrive
-    in quick succession (e.g. scraping 200+ listings).
+    Line formats emitted by the scraper:
+      "New listing: <title> | price: <price> | <link>"
+      "Price change: <title> <old> → <new>"
+
+    Everything else is ignored — it continues to the TextHandler via the
+    normal logger propagation chain.
     """
-    def __init__(self, text_widget, root):
-        logging.Handler.__init__(self)
-        self.text_widget = text_widget
-        self.root = root
-        self._queue = queue.Queue()
-        self._flush_scheduled = False
 
-    def emit(self, record):
-        msg = self.format(record) + '\n'
-        self._queue.put(msg)
-        # Schedule a flush only if one isn't already pending — avoids
-        # queuing thousands of individual after() callbacks.
-        if not self._flush_scheduled:
-            self._flush_scheduled = True
-            try:
-                self.root.after(100, self._flush)
-            except RuntimeError:
-                pass  # root destroyed (app closing)
+    # Patterns must match exactly what imotBgScraper logs
+    _RE_NEW     = re.compile(r"New listing: (.+?) \| price: (.+?) \| (https?://\S+)")
+    _RE_CHANGED = re.compile(r"Price change: (.+?) (\S+) → (\S+)")
 
-    def _flush(self):
-        """Drain the queue and append all pending messages in one batch."""
-        self._flush_scheduled = False
-        try:
-            msgs = []
-            while True:
-                try:
-                    msgs.append(self._queue.get_nowait())
-                except queue.Empty:
-                    break
+    def __init__(self):
+        super().__init__()
+        self._queue: queue.Queue = queue.Queue()
 
-            if not msgs:
-                return
+    def emit(self, record: logging.LogRecord) -> None:
+        msg = record.getMessage()
+        m = self._RE_NEW.search(msg)
+        if m:
+            self._queue.put({
+                "kind":  "NEW",
+                "title": m.group(1).strip(),
+                "price": m.group(2).strip(),
+                "link":  m.group(3).strip(),
+            })
+            return
+        m = self._RE_CHANGED.search(msg)
+        if m:
+            self._queue.put({
+                "kind":      "CHANGED",
+                "title":     m.group(1).strip(),
+                "old_price": m.group(2).strip(),
+                "price":     m.group(3).strip(),
+                "link":      "",
+            })
 
-            self.text_widget.insert(tk.END, ''.join(msgs))
-
-            # Tag URLs in the newly appended text
-            for msg in msgs:
-                if 'http' in msg:
-                    line_start = self.text_widget.get("end-2c linestart", "end-2c lineend")
-                    url_start_pos = line_start.find('http')
-                    if url_start_pos != -1:
-                        start_idx = f"end-2c linestart+{url_start_pos}c"
-                        end_idx   = f"end-2c linestart+{len(line_start)}c"
-                        self.text_widget.tag_add("url", start_idx, end_idx)
-
-            self.text_widget.see(tk.END)
-
-            # If more messages arrived while we were flushing, schedule another flush
-            if not self._queue.empty():
-                self._flush_scheduled = True
-                self.root.after(100, self._flush)
-
-        except tk.TclError:
-            pass  # widget destroyed (app closing)
 
 # --- Main GUI Class ---
 
 class ImotScraperGUI:
+
+    # ── Design tokens — sourced from gui.theme so the GUI can reference them
+    #    as self.BG, self.FG etc. without importing AppTheme everywhere.
+    BG            = AppTheme.BG
+    BG2           = AppTheme.BG2
+    BG3           = AppTheme.BG3
+    FG            = AppTheme.FG
+    FG_DIM        = AppTheme.FG_DIM
+    ACCENT        = AppTheme.ACCENT
+    GREEN         = AppTheme.GREEN
+    ORANGE        = AppTheme.ORANGE
+    YELLOW        = AppTheme.YELLOW
+    BTN_GREEN     = AppTheme.BTN_GREEN
+    BTN_GREEN_H   = AppTheme.BTN_GREEN_H
+    BTN_RED       = AppTheme.BTN_RED
+    BTN_RED_H     = AppTheme.BTN_RED_H
+    BTN_PURPLE    = AppTheme.BTN_PURPLE
+    BTN_PURPLE_H  = AppTheme.BTN_PURPLE_H
+    FEED_NEW_BG     = AppTheme.FEED_NEW_BG
+    FEED_CHANGED_BG = AppTheme.FEED_CHANGED_BG
+    FEED_DELETED_BG = AppTheme.FEED_DELETED_BG
+    FONT   = AppTheme.FONT
+    FONT_B = AppTheme.FONT_B
+    FONT_LG= AppTheme.FONT_LG
+
     def __init__(self, root, controller=None):
         self.root = root
         self.root.title("Imot.bg Scraper")
-        self.root.geometry("950x850") 
-        self.root.configure(padx=10, pady=10)
-        
+        self.root.geometry("780x850")
+        self.root.configure(padx=10, pady=10, bg=self.BG)
+
         self.controller = controller
         self.urls = []
         self.data_dir = 'data'
         if not os.path.exists(self.data_dir):
             os.makedirs(self.data_dir)
-            
+
         self.scheduler_running = False
         self.file_view_button_frame = None
         self._search_ids = {}  # treeview item_id → DB search id
+        self._gallery_win: tk.Toplevel | None = None   # single open gallery window
 
         self.root.protocol("WM_DELETE_WINDOW", self.on_closing)
-
+        apply_theme(self.root)
+        self._set_dark_titlebar(self.root)
         self.setup_gui()
-        
+
+    def _vsb(self, parent, command):
+        """Return a slim dark vertical scrollbar."""
+        return ttk.Scrollbar(parent, orient="vertical",
+                             command=command, style="Slim.Vertical.TScrollbar")
+
+    def _hsb(self, parent, command):
+        """Return a slim dark horizontal scrollbar."""
+        return ttk.Scrollbar(parent, orient="horizontal",
+                             command=command, style="Slim.Horizontal.TScrollbar")
+
+    @staticmethod
+    def _set_dark_titlebar(window: tk.Wm) -> None:
+        """Apply the Windows dark-mode title bar to *window* (root or Toplevel).
+
+        Uses DWMWA_USE_IMMERSIVE_DARK_MODE (attribute 20) — available on
+        Windows 10 build 18985+ and Windows 11.  Silently ignored elsewhere.
+        """
+        try:
+            import ctypes
+            import ctypes.wintypes
+            hwnd = ctypes.windll.user32.GetParent(window.winfo_id())
+            if hwnd == 0:                       # winfo_id() *is* the HWND on Windows
+                hwnd = window.winfo_id()
+            DWMWA_USE_IMMERSIVE_DARK_MODE = 20
+            value = ctypes.c_int(1)
+            ctypes.windll.dwmapi.DwmSetWindowAttribute(
+                hwnd,
+                DWMWA_USE_IMMERSIVE_DARK_MODE,
+                ctypes.byref(value),
+                ctypes.sizeof(value),
+            )
+        except Exception:
+            pass  # non-Windows or older Windows — ignore silently
+
     def setup_logging(self):
-        """Configures Python's logging to route messages to the GUI's log text widget."""
-        handler = TextHandler(self.log_text, self.root)
-        formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
-        handler.setFormatter(formatter)
-        
+        """Attaches the feed handler so new/changed scraper events reach the results feed."""
+        self._feed_handler = ResultsFeedHandler()
         root_logger = logging.getLogger()
-        if not any(isinstance(h, TextHandler) for h in root_logger.handlers):
-            root_logger.addHandler(handler)
-        
+        if not any(isinstance(h, ResultsFeedHandler) for h in root_logger.handlers):
+            root_logger.addHandler(self._feed_handler)
         root_logger.setLevel(logging.INFO)
+        self._flush_feed()   # start the recurring drain loop
+
+    def _flush_feed(self):
+        """Drain the ResultsFeedHandler queue and insert rows into the feed Treeview."""
+        try:
+            while True:
+                try:
+                    event = self._feed_handler._queue.get_nowait()
+                except queue.Empty:
+                    break
+
+                kind  = event["kind"]
+                title = event["title"]
+                price = event["price"]
+                link  = event.get("link", "")
+
+                if kind == "CHANGED":
+                    price_display = f"{event['old_price']} → {price}"
+                else:
+                    price_display = price
+
+                iid = self._feed_tree.insert(
+                    "", tk.END,
+                    values=(kind, title, price_display),
+                    tags=(kind,)
+                )
+                self._feed_link_map[iid] = link
+                self._feed_tree.see(iid)
+        except tk.TclError:
+            return
+        self.root.after(200, self._flush_feed)
 
     def setup_gui(self):
         
@@ -168,41 +218,55 @@ class ImotScraperGUI:
         upper_section = ttk.Frame(paned)
         
         # URLs List Frame
-        urls_frame = ttk.LabelFrame(upper_section, text="Search URL List", padding=10)
+        urls_frame = ttk.LabelFrame(upper_section, text="Saved Searches", padding=10)
         urls_frame.pack(fill=tk.BOTH, expand=True, pady=(0, 10))
-        
-        # URLs Treeview with scrollbars
-        tree_frame = ttk.Frame(urls_frame)
-        tree_frame.pack(fill=tk.BOTH, expand=True)
-        
-        self.tree = ttk.Treeview(tree_frame, columns=('Search Name', 'Emails', 'URL'), show='headings', height=6)
-        
-        self.tree.heading('Search Name', text='Search Name')
-        self.tree.heading('Emails', text='Subscribed Emails')
-        self.tree.heading('URL', text='URL')
 
-        self.tree.column('Search Name', width=150)
-        self.tree.column('Emails', width=200)
-        self.tree.column('URL', width=350)
-        
-        tree_vsb = ttk.Scrollbar(tree_frame, orient="vertical", command=self.tree.yview)
-        tree_hsb = ttk.Scrollbar(tree_frame, orient="horizontal", command=self.tree.xview)
-        self.tree.configure(yscrollcommand=tree_vsb.set, xscrollcommand=tree_hsb.set)
-        
+        # Left: treeview — right: action buttons
+        list_container = ttk.Frame(urls_frame)
+        list_container.pack(fill=tk.BOTH, expand=True)
+        list_container.columnconfigure(0, weight=1)
+        list_container.rowconfigure(0, weight=1)
+
+        # URLs Treeview with scrollbar — names only
+        tree_frame = ttk.Frame(list_container)
+        tree_frame.grid(row=0, column=0, sticky='nsew')
+        tree_frame.columnconfigure(0, weight=1)
+        tree_frame.rowconfigure(0, weight=1)
+
+        self.tree = ttk.Treeview(tree_frame, columns=('Search Name',), show='headings', height=6)
+        self.tree.heading('Search Name', text='Search Name')
+        self.tree.column('Search Name', stretch=True)
+
+        tree_vsb = self._vsb(tree_frame, self.tree.yview)
+        self.tree.configure(yscrollcommand=tree_vsb.set)
+
         self.tree.grid(row=0, column=0, sticky='nsew')
         tree_vsb.grid(row=0, column=1, sticky='ns')
-        tree_hsb.grid(row=1, column=0, sticky='ew')
-        tree_frame.grid_columnconfigure(0, weight=1)
-        tree_frame.grid_rowconfigure(0, weight=1)
-        
-        # Control buttons frame
+
+        # Right: vertical button panel
+        btn_panel = ttk.Frame(list_container)
+        btn_panel.grid(row=0, column=1, sticky='ns', padx=(8, 0))
+
+        RoundedButton(btn_panel, text="Add New Search",
+                      bg=AppTheme.BTN_GREEN, hover_bg=AppTheme.BTN_GREEN_H,
+                      command=lambda: self.show_add_url_dialog(action="create")
+                      ).pack(fill=tk.X, pady=(0, 4))
+        RoundedButton(btn_panel, text="Edit Selected",
+                      bg=AppTheme.BTN_DEFAULT, hover_bg=AppTheme.BTN_DEFAULT_H,
+                      command=self.edit_selected_url
+                      ).pack(fill=tk.X, pady=(0, 4))
+        RoundedButton(btn_panel, text="Remove Selected",
+                      bg=AppTheme.BTN_RED, hover_bg=AppTheme.BTN_RED_H,
+                      command=self.remove_url
+                      ).pack(fill=tk.X, pady=(0, 0))
+
+        # Control buttons frame (Run Scraping Now lives here)
         control_frame = ttk.Frame(upper_section)
         control_frame.pack(fill=tk.X, pady=(0, 10))
-        
-        ttk.Button(control_frame, text="Add New Search", command=lambda: self.show_add_url_dialog(action="create")).pack(side=tk.LEFT, padx=5)
-        ttk.Button(control_frame, text="Edit Selected", command=self.edit_selected_url).pack(side=tk.LEFT, padx=5)
-        ttk.Button(control_frame, text="Remove Selected", command=self.remove_url).pack(side=tk.LEFT, padx=5)
-        self.scrape_btn = ttk.Button(control_frame, text="Run Scraping Now", command=self.start_scraping)
+
+        self.scrape_btn = RoundedButton(control_frame, text="▶  Run Scraping Now",
+                                        bg=AppTheme.BTN_GREEN, hover_bg=AppTheme.BTN_GREEN_H,
+                                        command=self.start_scraping)
         self.scrape_btn.pack(side=tk.RIGHT, padx=5)
         
         # File view frame
@@ -212,16 +276,71 @@ class ImotScraperGUI:
         self.file_view_button_frame = ttk.Frame(file_view_frame)
         self.file_view_button_frame.pack(fill=tk.X, padx=5, pady=5)
         
-        # Lower section (Log output)
+        # ── Lower section — scrape feed + raw log ────────────────────────────
         lower_section = ttk.Frame(paned)
-        
-        log_frame = ttk.LabelFrame(lower_section, text="Log Output", padding=10)
-        log_frame.pack(fill=tk.BOTH, expand=True)
-        
-        self.log_text = CustomText(log_frame, height=15)
-        self.log_text.pack(fill=tk.BOTH, expand=True)
-        
-        paned.add(upper_section, weight=40) 
+
+        # Status bar: shows which search is running / last run summary
+        self._status_bar = tk.Frame(lower_section, bg=self.BG2, pady=6)
+        self._status_bar.pack(fill=tk.X)
+        self._status_label = tk.Label(
+            self._status_bar, text="  No scrape run yet",
+            bg=self.BG2, fg=self.FG_DIM,
+            font=self.FONT, anchor="w"
+        )
+        self._status_label.pack(side=tk.LEFT, padx=10)
+        self._status_counts = tk.Label(
+            self._status_bar, text="",
+            bg=self.BG2, fg=self.FG_DIM,
+            font=self.FONT_B, anchor="e"
+        )
+        self._status_counts.pack(side=tk.RIGHT, padx=10)
+
+        # Results feed Treeview
+        feed_frame = ttk.LabelFrame(lower_section, text="Scrape Results Feed", padding=(6, 4))
+        feed_frame.pack(fill=tk.BOTH, expand=True, pady=(4, 2))
+        feed_frame.rowconfigure(0, weight=1)
+        feed_frame.columnconfigure(0, weight=1)
+
+        feed_cols = ("kind", "title", "price")
+        self._feed_tree = ttk.Treeview(feed_frame, columns=feed_cols,
+                                       show="headings", height=8,
+                                       style="Feed.Treeview")
+        self._feed_tree.heading("kind",  text="Type")
+        self._feed_tree.heading("title", text="Title")
+        self._feed_tree.heading("price", text="Price")
+
+        self._feed_tree.column("kind",  width=70,  stretch=False, anchor="center")
+        self._feed_tree.column("title", width=260, stretch=True)
+        self._feed_tree.column("price", width=120, stretch=False, anchor="center")
+
+        self._feed_tree.tag_configure("NEW",
+                                      background=self.FEED_NEW_BG,
+                                      foreground=AppTheme.FG_WHITE,
+                                      font=self.FONT_B)
+        self._feed_tree.tag_configure("CHANGED",
+                                      background=self.FEED_CHANGED_BG,
+                                      foreground=AppTheme.FG_WHITE,
+                                      font=self.FONT_B)
+        self._feed_tree.tag_configure("DELETED",
+                                      background=self.FEED_DELETED_BG,
+                                      foreground=AppTheme.FG_WHITE,
+                                      font=self.FONT_B)
+        self._feed_tree.tag_configure("EMPTY",    foreground=self.FG_DIM)
+
+        feed_vsb = self._vsb(feed_frame, self._feed_tree.yview)
+        self._feed_tree.configure(yscrollcommand=feed_vsb.set)
+        self._feed_tree.grid(row=0, column=0, sticky="nsew")
+        feed_vsb.grid(row=0, column=1, sticky="ns")
+
+        # map feed iid → property link (so we can look up by link on click)
+        self._feed_link_map: dict = {}
+
+        self._feed_tree.bind("<Double-1>", self._on_feed_click)
+
+        # Show placeholder until first scrape
+        self._show_feed_placeholder()
+
+        paned.add(upper_section, weight=40)
         paned.add(lower_section, weight=60)
         
         self.setup_logging()
@@ -240,6 +359,7 @@ class ImotScraperGUI:
         view_window.minsize(900, 400)
         view_window.rowconfigure(0, weight=1)
         view_window.columnconfigure(0, weight=1)
+        self._set_dark_titlebar(view_window)
 
         main_frame = ttk.Frame(view_window)
         main_frame.grid(row=0, column=0, sticky='nsew', padx=5, pady=5)
@@ -268,11 +388,11 @@ class ImotScraperGUI:
         tree.column('Link',       width=250)
 
         # Colour-code by status
-        tree.tag_configure('Active',   foreground='green')
-        tree.tag_configure('Inactive', foreground='red')
+        tree.tag_configure('Active',   foreground='#ffffff', font=self.FONT_B)
+        tree.tag_configure('Inactive', foreground='#ffffff', font=self.FONT_B)
 
-        vsb = ttk.Scrollbar(main_frame, orient="vertical",   command=tree.yview)
-        hsb = ttk.Scrollbar(main_frame, orient="horizontal", command=tree.xview)
+        vsb = self._vsb(main_frame, tree.yview)
+        hsb = self._hsb(main_frame, tree.xview)
         tree.configure(yscrollcommand=vsb.set, xscrollcommand=hsb.set)
         tree.grid(row=0, column=0, sticky='nsew')
         vsb.grid(row=0, column=1, sticky='ns')
@@ -355,6 +475,9 @@ class ImotScraperGUI:
         price       = prop.get("current_price") or "—"
         description = prop.get("description") or "—"
 
+        # Full price history for the inline table (newest first)
+        price_history = self.controller.db.get_price_history(property_id)
+
         images = self.controller.db.get_images(property_id)
         if not images:
             messagebox.showinfo("No Images", f"No images stored for:\n{title}", parent=parent)
@@ -368,7 +491,16 @@ class ImotScraperGUI:
         win.rowconfigure(1, weight=1)
         win.columnconfigure(0, weight=1)
 
-        # Navigation state
+        # ── Single window — close any previously open gallery ─────────────────
+        if self._gallery_win and self._gallery_win.winfo_exists():
+            self._gallery_win.destroy()
+        self._gallery_win = win
+
+        # Dark OS title bar + stay on top
+        self._set_dark_titlebar(win)
+        win.attributes("-topmost", True)
+        win.protocol("WM_DELETE_WINDOW", lambda: self._close_gallery(win))
+
         idx = [0]
 
         # ── Nav bar ──────────────────────────────────────────────────────────
@@ -468,22 +600,119 @@ class ImotScraperGUI:
             opts = dict(text=value, anchor='nw', justify='left', wraplength=wrap) if wrap else dict(text=value, anchor='nw', justify='left')
             tk.Label(info_frame, **opts).grid(row=row, column=1, sticky='nw', pady=2)
 
-        _lbl(0, "Title:",       title)
-        _lbl(1, "Location:",    location)
-        _lbl(2, "Price:",       price)
+        # ── Title row — clickable hyperlink ──────────────────────────────────
+        tk.Label(info_frame, text="Title:", font=("Segoe UI", 9, "bold"),
+                 anchor='nw', justify='left').grid(
+            row=0, column=0, sticky='nw', padx=(0, 8), pady=2)
+        link_url = prop.get("link") or ""
+        title_lbl = tk.Label(
+            info_frame, text=title, anchor='nw', justify='left',
+            fg=self.ACCENT, cursor="hand2",
+            font=("Segoe UI", 9, "underline"), wraplength=500
+        )
+        title_lbl.grid(row=0, column=1, sticky='nw', pady=2)
+        if link_url:
+            title_lbl.bind("<Button-1>", lambda e: webbrowser.open(link_url))
 
-        # Description may be long — use a small read-only Text widget
+        _lbl(1, "Location:", location)
+        _lbl(2, "Price:",    price)
+
+        # ── Price history mini-table ──────────────────────────────────────────
+        past_prices = [r for r in price_history if r["price_status"] != "Current"]
+
+        if past_prices:
+            tk.Label(info_frame, text="Price history:", font=("Segoe UI", 9, "bold"),
+                     anchor='nw').grid(row=3, column=0, sticky='nw', padx=(0, 8), pady=2)
+
+            ph_frame = ttk.Frame(info_frame)
+            ph_frame.grid(row=3, column=1, sticky='w', pady=2)
+
+            # Match treeview background to the window background
+            win_bg = win.cget("bg")
+            ph_style = ttk.Style(win)
+            ph_style.configure("PriceHistory.Treeview",
+                               background=win_bg,
+                               fieldbackground=win_bg,
+                               rowheight=20)
+            ph_style.configure("PriceHistory.Treeview.Heading",
+                               background=win_bg,
+                               relief="flat")
+
+            visible_rows = min(len(past_prices), 4)
+            ph_tree = ttk.Treeview(ph_frame, columns=("date", "price"),
+                                   show="headings", height=visible_rows,
+                                   style="PriceHistory.Treeview")
+            ph_tree.heading("date",  text="Date")
+            ph_tree.heading("price", text="Price")
+            ph_tree.column("date",  width=130, stretch=False, anchor="center")
+            ph_tree.column("price", width=100, stretch=False, anchor="center")
+
+            for rec in past_prices:
+                date_str = rec["recorded_at"][:16] if rec.get("recorded_at") else "—"
+                ph_tree.insert("", tk.END, values=(date_str, rec["price"]))
+
+            ph_tree.grid(row=0, column=0, sticky='ew')
+
+            if len(past_prices) > 4:
+                ph_vsb = self._vsb(ph_frame, ph_tree.yview)
+                ph_tree.configure(yscrollcommand=ph_vsb.set)
+                ph_vsb.grid(row=0, column=1, sticky='ns')
+
+        # ── Description ──────────────────────────────────────────────────────
         tk.Label(info_frame, text="Description:", font=("Segoe UI", 9, "bold"),
-                 anchor='nw').grid(row=3, column=0, sticky='nw', padx=(0, 8), pady=2)
+                 anchor='nw').grid(row=4, column=0, sticky='nw', padx=(0, 8), pady=2)
         desc_box = tk.Text(info_frame, height=10, wrap='word',
                            relief='flat', bg=win.cget('bg'),
                            font=("Segoe UI", 9), state='normal')
         desc_box.insert('1.0', description)
         desc_box.config(state='disabled')
-        desc_box.grid(row=3, column=1, sticky='ew', pady=2)
+        desc_box.grid(row=4, column=1, sticky='ew', pady=2)
 
         show(0)
         win.focus_set()
+
+    def _show_feed_placeholder(self):
+        """Insert a dim placeholder row when the feed has no results."""
+        self._feed_tree.insert("", tk.END,
+                               values=("", "Run a scrape to see new listings and price changes here.", ""),
+                               tags=("EMPTY",))
+
+    def _on_feed_click(self, event):
+        """Handle double-clicks on the scrape results feed to open the gallery."""
+        item = self._feed_tree.identify_row(event.y)
+        if not item:
+            return
+        # Ignore the placeholder row
+        if "EMPTY" in self._feed_tree.item(item)["tags"]:
+            return
+        self._open_gallery_for_feed_item(item)
+
+    def _open_gallery_for_feed_item(self, iid: str):
+        """Look up property by link stored in _feed_link_map and open the gallery."""
+        if not self.controller or not self.controller.db:
+            return
+        link = self._feed_link_map.get(iid, "")
+        if not link:
+            messagebox.showinfo("No link", "No URL stored for this entry.", parent=self.root)
+            return
+        prop = self.controller.db.get_property_by_link(link)
+        if not prop:
+            messagebox.showinfo("Not found",
+                                "Property details not in the database yet.\n"
+                                "It may still be saving — try again in a moment.",
+                                parent=self.root)
+            return
+        ph = self.controller.db.get_price_history(prop["id"])
+        prop["current_price"] = next(
+            (r["price"] for r in ph if r["price_status"] == "Current"), "—"
+        )
+        self._open_gallery(self.root, prop)
+
+    def _close_gallery(self, win: tk.Toplevel) -> None:
+        """Destroy the gallery window and clear the singleton reference."""
+        if self._gallery_win is win:
+            self._gallery_win = None
+        win.destroy()
 
     def load_file_view_buttons(self, button_frame):
         """Rebuild the 'View Results' buttons from the searches in the DB."""
@@ -495,11 +724,11 @@ class ImotScraperGUI:
 
         searches = self.controller.get_all_searches()
         for s in searches:
-            ttk.Button(
+            RoundedButton(
                 button_frame,
-                text=f"View: {s['search_name']}",
+                text=f"Properties: {s['search_name']}",
+                bg=AppTheme.BTN_PURPLE, hover_bg=AppTheme.BTN_PURPLE_H,
                 command=lambda name=s['search_name']: self.view_search_results(name),
-                width=22
             ).pack(side=tk.LEFT, padx=5, pady=5)
 
     def refresh_file_view(self):
@@ -513,17 +742,29 @@ class ImotScraperGUI:
         if not selected_items:
             messagebox.showwarning("Warning", "Please select a search to edit.")
             return
-        
+
         item_id = selected_items[0]
-        values = self.tree.item(item_id)['values']
-        
-        emails = values[1].split(';')
-        
+        search_name = self.tree.item(item_id)['values'][0]
+
+        # Look up the full record from the DB (treeview now shows names only)
+        search_record = None
+        if self.controller:
+            for s in self.controller.get_all_searches():
+                if s['search_name'] == search_name:
+                    search_record = s
+                    break
+
+        if not search_record:
+            messagebox.showerror("Error", f"Could not find search '{search_name}' in database.")
+            return
+
+        emails = search_record.get('emails', '').split(';') if search_record.get('emails') else ['']
+
         self.show_add_url_dialog(
             action="edit",
             item_id=item_id,
-            url=values[2],
-            search_name=values[0],
+            url=search_record.get('url', ''),
+            search_name=search_name,
             emails=emails
         )
 
@@ -537,6 +778,7 @@ class ImotScraperGUI:
         dialog.geometry("500x350")
         dialog.minsize(450, 300) 
         dialog.transient(self.root) 
+        self._set_dark_titlebar(dialog)
         
         dialog.rowconfigure(0, weight=1)
         dialog.columnconfigure(0, weight=1)
@@ -590,7 +832,7 @@ class ImotScraperGUI:
         email_canvas = tk.Canvas(email_frame_container, height=100)
         email_canvas.pack(side="left", fill="both", expand=True)
         
-        email_scrollbar = ttk.Scrollbar(email_frame_container, orient="vertical", command=email_canvas.yview)
+        email_scrollbar = self._vsb(email_frame_container, email_canvas.yview)
         email_scrollbar.pack(side="right", fill="y")
         
         email_canvas.configure(yscrollcommand=email_scrollbar.set)
@@ -634,8 +876,10 @@ class ImotScraperGUI:
         if not self.email_entries:
              add_email_field(email_value="")
         
-        save_btn = ttk.Button(main_frame, text="Save Changes" if action == "edit" else "Save Search", 
-                              command=lambda: self._save_dialog_data(dialog, url_entry.get(), name_entry.get(), item_id))
+        save_btn = RoundedButton(main_frame,
+                                 text="Save Changes" if action == "edit" else "Save Search",
+                                 bg=AppTheme.BTN_GREEN, hover_bg=AppTheme.BTN_GREEN_H,
+                                 command=lambda: self._save_dialog_data(dialog, url_entry.get(), name_entry.get(), item_id))
         save_btn.grid(row=3, column=1, pady=10, sticky='E')
         
         dialog.grab_set() 
@@ -719,7 +963,7 @@ class ImotScraperGUI:
         if self.controller:
             for s in self.controller.get_all_searches():
                 item_id = self.tree.insert('', tk.END,
-                    values=(s['search_name'], s['emails'], s['url']))
+                    values=(s['search_name'],))
                 self._search_ids[item_id] = s['id']
 
     def load_existing_urls(self):
@@ -803,7 +1047,15 @@ class ImotScraperGUI:
                 )
                 return
 
-        self.log_text.delete(1.0, tk.END)
+        # Clear the feed and reset status bar
+        self._feed_tree.delete(*self._feed_tree.get_children())
+        self._feed_link_map.clear()
+        names = "  |  ".join(s["search_name"] for s in searches)
+        self._status_label.config(
+            text=f"  ⏳  Running: {names}", fg=self.YELLOW
+        )
+        self._status_counts.config(text="")
+
         logging.info(f"Starting scraper for {len(searches)} search(es)...")
         self.scrape_btn.config(state=tk.DISABLED, text="Scraping...")
         self.scraper_thread = threading.Thread(target=self.run_scraper, daemon=True)
@@ -815,32 +1067,37 @@ class ImotScraperGUI:
         if self.scraper_thread.is_alive():
             self.root.after(500, self._check_scraper_thread)
         else:
-            self.scrape_btn.config(state=tk.NORMAL, text="Run Scraping Now")
-    
+            self.scrape_btn.config(state=tk.NORMAL, text="▶  Run Scraping Now")
+
     def run_scraper(self):
         """Executes the scraper job (on-demand)."""
         import traceback as _tb
         try:
             self.root.after(0, lambda: logging.info("Starting on-demand scraper run..."))
-            print(f"[GUI] Starting scraper thread execution")
 
             if not self.controller:
                 error_msg = "Controller not initialized - cannot run scraper"
                 self.root.after(0, lambda: logging.error(error_msg))
                 return
 
-            print(f"[GUI] Running scraper via controller...")
             success = self.controller.run_scraper()
-            print(f"[GUI] Scraper completed with result: {success}")
 
             def finalize_scraper_run(result):
                 try:
-                    logging.info("Sending reports...")
                     self.controller.send_email_reports(result)
-                    logging.info("Scraping completed! Check the output above for results.")
+                    # Count feed rows for the summary
+                    rows  = self._feed_tree.get_children()
+                    tags  = [self._feed_tree.item(r)["tags"][0] for r in rows]
+                    n_new = tags.count("NEW")
+                    n_chg = tags.count("CHANGED")
+                    summary = f"✔  {n_new} new  |  {n_chg} changed"
+                    self._status_label.config(text="  Last run finished", fg=self.FG_DIM)
+                    self._status_counts.config(text=f"{summary}  ")
+                    if n_new == 0 and n_chg == 0:
+                        self._show_feed_placeholder()
+                    logging.info(f"Scraping completed — {n_new} new, {n_chg} changed.")
                     self.refresh_file_view()
                 except Exception as e:
-                    print(f"[GUI] Error during finalization: {e}")
                     logging.error(f"Error finalizing scraper run: {e}")
                     _tb.print_exc()
 
@@ -849,7 +1106,6 @@ class ImotScraperGUI:
         except Exception as e:
             error_msg = f"Critical Error during on-demand run: {str(e)}"
             self.root.after(0, lambda msg=error_msg: logging.error(msg))
-            print(f"[GUI] UNCAUGHT EXCEPTION in scraper thread:")
             _tb.print_exc()
             
 
@@ -859,11 +1115,8 @@ class ImotScraperGUI:
             logging.info("Stopping scheduler before exit...")
             if self.controller:
                 self.controller.stop_scheduler()
-        
-        time.sleep(0.5) 
-        
-        self.root.quit()
-        self.root.destroy()
+
+        self.root.after(500, self.root.destroy)
 
 
 def main(controller=None):

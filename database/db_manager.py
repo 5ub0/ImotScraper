@@ -440,6 +440,15 @@ class DatabaseManager:
                 ).fetchall()
             return [dict(r) for r in rows]
 
+    def get_property_by_link(self, link: str) -> Optional[Dict]:
+        """Return a single property dict looked up by its listing URL, or None."""
+        with self._get_connection() as conn:
+            row = conn.execute(
+                "SELECT * FROM properties WHERE link = ? LIMIT 1",
+                (link,)
+            ).fetchone()
+            return dict(row) if row else None
+
     def get_price_history(self, property_id: int) -> List[Dict]:
         """Return full price history for a single property, newest first."""
         with self._get_connection() as conn:
@@ -448,6 +457,14 @@ class DatabaseManager:
                 (property_id,)
             ).fetchall()
             return [dict(r) for r in rows]
+
+    def get_property_by_link(self, link: str) -> Optional[Dict]:
+        """Return the property row matching the given listing URL, or None."""
+        with self._get_connection() as conn:
+            row = conn.execute(
+                "SELECT * FROM properties WHERE link = ? LIMIT 1", (link,)
+            ).fetchone()
+            return dict(row) if row else None
 
     def get_new_and_changed_since_last_run(self, search_id: int) -> Dict[str, List[Dict]]:
         """
