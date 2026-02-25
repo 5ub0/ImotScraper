@@ -246,7 +246,7 @@ class ImotScraperGUI:
         main_frame.rowconfigure(0, weight=1)
         main_frame.columnconfigure(0, weight=1)
 
-        columns = ('Status', 'Title', 'Location', 'Price', 'First Seen', 'Last Seen', 'Link')
+        columns = ('Status', 'Title', 'Location', 'Price', 'First Seen', 'Last Seen', 'Images', 'Link')
         tree = ttk.Treeview(main_frame, columns=columns, show='headings')
 
         tree.heading('Status',     text='Status')
@@ -255,6 +255,7 @@ class ImotScraperGUI:
         tree.heading('Price',      text='Current Price')
         tree.heading('First Seen', text='First Seen')
         tree.heading('Last Seen',  text='Last Seen')
+        tree.heading('Images',     text='📷')
         tree.heading('Link',       text='Link')
 
         tree.column('Status',     width=80,  anchor='center')
@@ -263,11 +264,12 @@ class ImotScraperGUI:
         tree.column('Price',      width=150)
         tree.column('First Seen', width=140, anchor='center')
         tree.column('Last Seen',  width=140, anchor='center')
+        tree.column('Images',     width=50,  anchor='center')
         tree.column('Link',       width=250)
 
         # Colour-code by status
         tree.tag_configure('Active',   foreground='green')
-        tree.tag_configure('Inactive', foreground='grey')
+        tree.tag_configure('Inactive', foreground='red')
 
         vsb = ttk.Scrollbar(main_frame, orient="vertical",   command=tree.yview)
         hsb = ttk.Scrollbar(main_frame, orient="horizontal", command=tree.xview)
@@ -276,12 +278,16 @@ class ImotScraperGUI:
         vsb.grid(row=0, column=1, sticky='ns')
         hsb.grid(row=1, column=0, sticky='ew')
 
+        # Build rows and keep a mapping: tree item → property dict
+        prop_id_map = {}
         for prop in properties:
-            # Fetch current price from price_history
             ph = self.controller.db.get_price_history(prop["id"]) if self.controller and self.controller.db else []
             current_price = next((r["price"] for r in ph if r["price_status"] == "Current"), "—")
 
-            tree.insert("", tk.END,
+            img_count = len(self.controller.db.get_images(prop["id"])) if self.controller and self.controller.db else 0
+            img_label = f"🖼 {img_count}" if img_count else "—"
+
+            iid = tree.insert("", tk.END,
                 values=(
                     prop["status"],
                     prop["title"] or "—",
@@ -289,28 +295,195 @@ class ImotScraperGUI:
                     current_price,
                     prop["first_seen"][:16],
                     prop["last_seen"][:16],
+                    img_label,
                     prop["link"] or "—",
                 ),
                 tags=(prop["status"],)
             )
+            prop_id_map[iid] = {**prop, "current_price": current_price}
 
-        # Make links clickable — Link is now column #7
         def on_click(event):
             item = tree.identify_row(event.y)
             col  = tree.identify_column(event.x)
-            if item and col == "#7":
-                link = tree.item(item)["values"][6]
+            if not item:
+                return
+            values = tree.item(item)["values"]
+            # Column #7 = Images, Column #8 = Link
+            if col == "#7":
+                prop = prop_id_map.get(item)
+                if prop is not None:
+                    self._open_gallery(view_window, prop)
+            elif col == "#8":
+                link = values[7]
                 if link and link != "—":
                     webbrowser.open(link)
+
         tree.bind("<Button-1>", on_click)
+        # Also open gallery on double-click anywhere on the row
+        def on_double_click(event):
+            item = tree.identify_row(event.y)
+            if not item:
+                return
+            prop = prop_id_map.get(item)
+            if prop is not None:
+                self._open_gallery(view_window, prop)
+        tree.bind("<Double-1>", on_double_click)
 
         # Summary label
         active_count   = sum(1 for p in properties if p["status"] == "Active")
         inactive_count = len(properties) - active_count
         ttk.Label(view_window,
-                  text=f"Total: {len(properties)}  |  Active: {active_count}  |  Inactive: {inactive_count}",
+                  text=f"Total: {len(properties)}  |  Active: {active_count}  |  Inactive: {inactive_count}  |  Click 📷 count or double-click a row to view images",
                   foreground="gray"
                  ).grid(row=1, column=0, pady=5)
+
+    def _open_gallery(self, parent: tk.Toplevel, prop: dict):
+        """Open a simple image gallery window for a property."""
+        try:
+            from PIL import Image, ImageTk
+            import io
+            pil_available = True
+        except ImportError:
+            pil_available = False
+
+        if not self.controller or not self.controller.db:
+            return
+
+        property_id = prop["id"]
+        title       = prop.get("title") or "—"
+        location    = prop.get("location") or "—"
+        price       = prop.get("current_price") or "—"
+        description = prop.get("description") or "—"
+
+        images = self.controller.db.get_images(property_id)
+        if not images:
+            messagebox.showinfo("No Images", f"No images stored for:\n{title}", parent=parent)
+            return
+
+        win = tk.Toplevel(parent)
+        win.title(f"Gallery — {title}")
+        win.geometry("860x780")
+        win.resizable(True, True)
+        # row 0 = nav bar, row 1 = image, row 2 = info panel
+        win.rowconfigure(1, weight=1)
+        win.columnconfigure(0, weight=1)
+
+        # Navigation state
+        idx = [0]
+
+        # ── Nav bar ──────────────────────────────────────────────────────────
+        nav = tk.Frame(win, bg="#2b2b2b", pady=6)
+        nav.grid(row=0, column=0, sticky='ew')
+        nav.columnconfigure(1, weight=1)
+
+        btn_prev = tk.Button(
+            nav, text="◀  Previous", width=12,
+            bg="#444", fg="white", activebackground="#666", activeforeground="white",
+            relief="flat", bd=0, padx=8, pady=4, cursor="hand2",
+            font=("Segoe UI", 9, "bold")
+        )
+        btn_prev.grid(row=0, column=0, padx=(12, 6), pady=2)
+
+        counter_lbl = tk.Label(nav, text="", bg="#2b2b2b", fg="white",
+                               font=("Segoe UI", 10))
+        counter_lbl.grid(row=0, column=1)
+
+        btn_next = tk.Button(
+            nav, text="Next  ▶", width=12,
+            bg="#444", fg="white", activebackground="#666", activeforeground="white",
+            relief="flat", bd=0, padx=8, pady=4, cursor="hand2",
+            font=("Segoe UI", 9, "bold")
+        )
+        btn_next.grid(row=0, column=2, padx=(6, 12), pady=2)
+
+        # ── Image area ───────────────────────────────────────────────────────
+        img_frame = tk.Frame(win, bg="black")
+        img_frame.grid(row=1, column=0, sticky='nsew')
+        img_frame.rowconfigure(0, weight=1)
+        img_frame.columnconfigure(0, weight=1)
+
+        if pil_available:
+            img_label = tk.Label(img_frame, bg="black", anchor='center')
+            img_label.grid(row=0, column=0, sticky='nsew')
+            img_label._photo = None
+
+            def show(i):
+                i = max(0, min(i, len(images) - 1))
+                idx[0] = i
+                rec = images[i]
+                counter_lbl.config(text=f"  {i + 1} / {len(images)}  ")
+                btn_prev.config(state=tk.NORMAL if i > 0 else tk.DISABLED,
+                                bg="#444" if i > 0 else "#333",
+                                fg="white" if i > 0 else "#888")
+                btn_next.config(state=tk.NORMAL if i < len(images) - 1 else tk.DISABLED,
+                                bg="#444" if i < len(images) - 1 else "#333",
+                                fg="white" if i < len(images) - 1 else "#888")
+
+                raw = rec["image_data"]
+                pil_img = Image.open(io.BytesIO(raw))
+
+                win.update_idletasks()
+                max_w = max(img_frame.winfo_width()  - 4, 400)
+                max_h = max(img_frame.winfo_height() - 4, 300)
+                pil_img.thumbnail((max_w, max_h), Image.LANCZOS)
+
+                photo = ImageTk.PhotoImage(pil_img)
+                img_label._photo = photo
+                img_label.config(image=photo)
+
+        else:
+            img_label = tk.Text(img_frame, wrap='word', state='disabled',
+                                bg="#1e1e1e", fg="#ccc", height=4)
+            img_label.grid(row=0, column=0, sticky='nsew')
+            tk.Label(img_frame,
+                     text="Install Pillow (pip install pillow) to see images.",
+                     bg="black", fg="orange").grid(row=1, column=0)
+
+            def show(i):
+                i = max(0, min(i, len(images) - 1))
+                idx[0] = i
+                rec = images[i]
+                counter_lbl.config(text=f"  {i + 1} / {len(images)}  ")
+                btn_prev.config(state=tk.NORMAL if i > 0 else tk.DISABLED)
+                btn_next.config(state=tk.NORMAL if i < len(images) - 1 else tk.DISABLED)
+                img_label.config(state='normal')
+                img_label.delete('1.0', tk.END)
+                img_label.insert(tk.END, rec["url"])
+                img_label.config(state='disabled')
+
+        btn_prev.config(command=lambda: show(idx[0] - 1))
+        btn_next.config(command=lambda: show(idx[0] + 1))
+        win.bind("<Left>",  lambda e: show(idx[0] - 1))
+        win.bind("<Right>", lambda e: show(idx[0] + 1))
+
+        # ── Info panel ───────────────────────────────────────────────────────
+        info_frame = ttk.Frame(win, padding=(12, 8))
+        info_frame.grid(row=2, column=0, sticky='ew')
+        info_frame.columnconfigure(1, weight=1)
+
+        def _lbl(row, key, value, wrap=0):
+            tk.Label(info_frame, text=key, font=("Segoe UI", 9, "bold"),
+                     anchor='nw', justify='left').grid(
+                row=row, column=0, sticky='nw', padx=(0, 8), pady=2)
+            opts = dict(text=value, anchor='nw', justify='left', wraplength=wrap) if wrap else dict(text=value, anchor='nw', justify='left')
+            tk.Label(info_frame, **opts).grid(row=row, column=1, sticky='nw', pady=2)
+
+        _lbl(0, "Title:",       title)
+        _lbl(1, "Location:",    location)
+        _lbl(2, "Price:",       price)
+
+        # Description may be long — use a small read-only Text widget
+        tk.Label(info_frame, text="Description:", font=("Segoe UI", 9, "bold"),
+                 anchor='nw').grid(row=3, column=0, sticky='nw', padx=(0, 8), pady=2)
+        desc_box = tk.Text(info_frame, height=10, wrap='word',
+                           relief='flat', bg=win.cget('bg'),
+                           font=("Segoe UI", 9), state='normal')
+        desc_box.insert('1.0', description)
+        desc_box.config(state='disabled')
+        desc_box.grid(row=3, column=1, sticky='ew', pady=2)
+
+        show(0)
+        win.focus_set()
 
     def load_file_view_buttons(self, button_frame):
         """Rebuild the 'View Results' buttons from the searches in the DB."""
@@ -405,7 +578,15 @@ class ImotScraperGUI:
         
         email_frame_container = ttk.Frame(main_frame)
         email_frame_container.grid(row=2, column=0, columnspan=2, padx=5, pady=10, sticky='EW')
-        
+
+        # ── "Email notifications – coming soon" banner ────────────────────
+        ttk.Label(
+            email_frame_container,
+            text="📧  Email notifications — coming soon",
+            foreground="gray",
+            font=("Segoe UI", 9, "italic"),
+        ).pack(anchor='w', padx=4, pady=(0, 4))
+
         email_canvas = tk.Canvas(email_frame_container, height=100)
         email_canvas.pack(side="left", fill="both", expand=True)
         
@@ -424,20 +605,21 @@ class ImotScraperGUI:
 
         self.email_entries = []
         
-        add_email_btn = ttk.Button(email_frame, text="+ Add Email", command=lambda: add_email_field())
+        add_email_btn = ttk.Button(email_frame, text="+ Add Email",
+                                   command=lambda: add_email_field(),
+                                   state='disabled')  # not active yet
         
         def add_email_field(event=None, email_value=""):
             """Adds a new email entry field and binds paste."""
             row_num = len(self.email_entries)
             
-            ttk.Label(email_frame, text=f"Email {row_num + 1}:").grid(row=row_num, column=0, padx=5, pady=2, sticky='W')
+            ttk.Label(email_frame, text=f"Email {row_num + 1}:",
+                      foreground="gray").grid(row=row_num, column=0, padx=5, pady=2, sticky='W')
             
             email_entry = ttk.Entry(email_frame, width=40)
             email_entry.grid(row=row_num, column=1, padx=5, pady=2, sticky='EW')
             email_entry.insert(0, email_value)
-            
-            email_entry.bind('<Control-v>', paste_from_clipboard)
-            email_entry.bind('<Command-v>', paste_from_clipboard) 
+            email_entry.config(state='disabled')  # greyed out — not active yet
             
             self.email_entries.append(email_entry)
             

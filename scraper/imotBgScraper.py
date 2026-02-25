@@ -93,8 +93,8 @@ class ImotScraper:
                     existing_price, existing_title, existing_location = known.get(record_id, (None, None, None))
 
                     if existing_price is None:
-                        # Brand new listing — fetch detail page for clean title, location, description
-                        title, location, description = self._extract_title_and_location(session, link)
+                        # Brand new listing — fetch detail page for clean title, location, description, images
+                        title, location, description, image_urls = self._extract_title_and_location(session, link)
                         if not title:
                             title = list_title
                         is_new = True
@@ -104,7 +104,8 @@ class ImotScraper:
                         # Price changed — reuse stored title/location/description, no detail fetch needed
                         title = existing_title or list_title
                         location = existing_location or ""
-                        description = None  # None → COALESCE keeps existing value in DB
+                        description = None   # COALESCE keeps existing value in DB
+                        image_urls  = None   # no re-fetch; images already stored
                         is_new = False
                         changed_count += 1
                         self.logger.info(f"Price change: {title} {existing_price} → {price_text}")
@@ -112,7 +113,7 @@ class ImotScraper:
                         # Unchanged — skip detail fetch and DB write entirely
                         continue
 
-                    self.db.upsert_property(
+                    property_id = self.db.upsert_property(
                         record_id=record_id,
                         search_id=search_id,
                         title=title,
@@ -122,6 +123,11 @@ class ImotScraper:
                         price=price_text,
                         is_new=is_new,
                     )
+
+                    # Store images only for new listings (detail page already fetched)
+                    if is_new and image_urls:
+                        n = self.db.upsert_images(property_id, image_urls, session=session)
+                        self.logger.debug(f"  Stored {n}/{len(image_urls)} images")
 
                 if not soup.find('a', class_='saveSlink next'):
                     break
@@ -256,20 +262,23 @@ class ImotScraper:
             self.logger.warning(f"Could not fetch detail page {url}: {e}")
             return None
 
-    def _extract_title_and_location(self, session: requests.Session, url: str) -> Tuple[str, str, str]:
+    def _extract_title_and_location(self, session: requests.Session, url: str) -> Tuple[str, str, str, List[str]]:
         """
         Fetch the property detail page and extract the clean title, full location,
-        and description text.
+        description text, and carousel image URLs.
 
-        Returns (title, location, description) — all empty strings on failure.
+        Only non-cloned owl-item divs are collected for images (the carousel
+        duplicates cloned items for infinite-scroll; those carry the same URLs).
+
+        Returns (title, location, description, image_urls) — empty values on failure.
         """
         soup = self._fetch_detail(session, url)
         if not soup:
-            return "", "", ""
+            return "", "", "", []
 
         adv_header = soup.find("div", class_="advHeader")
         if not adv_header:
-            return "", "", ""
+            return "", "", "", []
 
         # --- Title ---
         title_div = adv_header.find("div", class_="title")
@@ -300,7 +309,26 @@ class ImotScraper:
             if text_div:
                 description = text_div.get_text(separator='\n', strip=True)
 
-        return title, location, description
+        # --- Images ---
+        # The carouselimg tags already carry the correct full-size CDN URL in
+        # their data-src attribute (e.g. cdn3.focus.bg/.../big/ or .../big1/).
+        # These are present in the static HTML even though the visible carousel
+        # is JS-rendered.  Each image appears twice (real item + clone for
+        # infinite scroll) so we deduplicate with a seen-set.
+        # We do NOT use the plain <img> //imotstatic*.focus.bg/... thumbnails —
+        # they are low-res and the //big1/ path is not reliably available on
+        # that CDN host for all listings.
+        image_urls: List[str] = []
+        seen: set = set()
+        for img in soup.find_all("img", class_="carouselimg"):
+            if len(image_urls) >= 10:
+                break
+            src = img.get("data-src", "")
+            if src and src not in seen:
+                seen.add(src)
+                image_urls.append(src)
+
+        return title, location, description, image_urls
 
     def _extract_price(self, price_div: BeautifulSoup) -> Optional[str]:
         """Extract price information from price div"""
