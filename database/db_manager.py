@@ -7,6 +7,8 @@ import sqlite3
 import threading
 import logging
 import os
+import time
+import requests
 from datetime import datetime
 from typing import List, Dict, Optional
 
@@ -63,6 +65,7 @@ class DatabaseManager:
                     search_id   INTEGER NOT NULL REFERENCES searches(id) ON DELETE CASCADE,
                     title       TEXT,
                     location    TEXT,
+                    description TEXT,
                     link        TEXT,
                     status      TEXT    NOT NULL DEFAULT 'Active',
                     first_seen  DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -91,6 +94,15 @@ class DatabaseManager:
                     inactive_count INTEGER NOT NULL DEFAULT 0,
                     success        INTEGER NOT NULL DEFAULT 1,
                     error_message  TEXT
+                );
+
+                CREATE TABLE IF NOT EXISTS property_images (
+                    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+                    property_id INTEGER NOT NULL REFERENCES properties(id) ON DELETE CASCADE,
+                    url         TEXT    NOT NULL,
+                    image_data  BLOB    NOT NULL,
+                    position    INTEGER NOT NULL DEFAULT 0,
+                    UNIQUE (property_id, url)
                 );
             """)
             self._migrate(conn)
@@ -233,6 +245,7 @@ class DatabaseManager:
         search_id: int,
         title: str,
         location: str,
+        description: str,
         link: str,
         price: str,
         is_new: bool,
@@ -240,21 +253,24 @@ class DatabaseManager:
         """
         Insert a new property or update an existing one.
         Records a price_history row ONLY when the property is new or the price changed.
+        Description is stored on first fetch and never overwritten (changes are rare
+        and the detail page is only fetched for new listings).
         Returns the property id.
         """
         with self._get_connection() as conn:
             cursor = conn.cursor()
 
             cursor.execute("""
-                INSERT INTO properties (record_id, search_id, title, location, link, status, last_seen)
-                VALUES (?, ?, ?, ?, ?, 'Active', CURRENT_TIMESTAMP)
+                INSERT INTO properties (record_id, search_id, title, location, description, link, status, last_seen)
+                VALUES (?, ?, ?, ?, ?, ?, 'Active', CURRENT_TIMESTAMP)
                 ON CONFLICT(record_id, search_id) DO UPDATE SET
-                    title     = excluded.title,
-                    location  = excluded.location,
-                    link      = excluded.link,
-                    status    = 'Active',
-                    last_seen = CURRENT_TIMESTAMP
-            """, (record_id, search_id, title, location, link))
+                    title       = excluded.title,
+                    location    = excluded.location,
+                    description = COALESCE(excluded.description, properties.description),
+                    link        = excluded.link,
+                    status      = 'Active',
+                    last_seen   = CURRENT_TIMESTAMP
+            """, (record_id, search_id, title, location, description, link))
 
             cursor.execute(
                 "SELECT id FROM properties WHERE record_id = ? AND search_id = ?",
@@ -277,6 +293,73 @@ class DatabaseManager:
                 """, (property_id, price, 1 if is_new else 0))
 
             return property_id
+
+    def upsert_images(
+        self,
+        property_id: int,
+        urls: List[str],
+        session: "requests.Session | None" = None,
+    ) -> int:
+        """
+        Download each image URL and store the binary data as a BLOB.
+
+        - Uses INSERT OR IGNORE so re-scraping a property never overwrites or
+          duplicates existing images.
+        - A small delay (0.1 s) is inserted between downloads to be polite.
+        - If a download fails the URL is skipped and a warning is logged.
+        - Returns the number of images actually saved.
+
+        Args:
+            property_id: DB id of the owning property.
+            urls:        Ordered list of image URLs to download.
+            session:     Optional requests.Session to reuse (headers / retries).
+                         Falls back to a plain requests.get if not supplied.
+        """
+        if not urls:
+            return 0
+
+        saved = 0
+        for pos, url in enumerate(urls):
+            try:
+                time.sleep(0.1)
+                if session is not None:
+                    resp = session.get(url, timeout=15)
+                else:
+                    resp = requests.get(url, timeout=15)
+                resp.raise_for_status()
+                image_data = resp.content
+
+                with self._get_connection() as conn:
+                    conn.execute(
+                        """
+                        INSERT OR IGNORE INTO property_images
+                            (property_id, url, image_data, position)
+                        VALUES (?, ?, ?, ?)
+                        """,
+                        (property_id, url, image_data, pos),
+                    )
+                saved += 1
+            except Exception as exc:
+                logger.warning(f"Could not download image {url}: {exc}")
+
+        return saved
+
+    def get_images(self, property_id: int) -> List[Dict]:
+        """
+        Return ordered list of image records for a property.
+        Each dict has keys: id, url, image_data (bytes), position.
+        """
+        with self._get_connection() as conn:
+            rows = conn.execute(
+                """
+                SELECT id, url, image_data, position
+                FROM   property_images
+                WHERE  property_id = ?
+                ORDER  BY position
+                """,
+                (property_id,),
+            ).fetchall()
+        return [dict(r) for r in rows]
 
     def _price_changed(self, cursor: sqlite3.Cursor, property_id: int, new_price: str) -> bool:
         """Return True if the new price differs from the current recorded price."""
