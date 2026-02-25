@@ -93,7 +93,7 @@ class ImotScraperGUI:
     def __init__(self, root, controller=None):
         self.root = root
         self.root.title("Imot.bg Scraper")
-        self.root.geometry("950x850")
+        self.root.geometry("780x850")
         self.root.configure(padx=10, pady=10, bg=self.BG)
 
         self.controller = controller
@@ -303,24 +303,28 @@ class ImotScraperGUI:
 
         feed_cols = ("kind", "title", "price")
         self._feed_tree = ttk.Treeview(feed_frame, columns=feed_cols,
-                                       show="headings", height=8)
+                                       show="headings", height=8,
+                                       style="Feed.Treeview")
         self._feed_tree.heading("kind",  text="Type")
         self._feed_tree.heading("title", text="Title")
         self._feed_tree.heading("price", text="Price")
 
-        self._feed_tree.column("kind",  width=80,  stretch=False, anchor="center")
-        self._feed_tree.column("title", width=440, stretch=True)
-        self._feed_tree.column("price", width=130, stretch=False, anchor="center")
+        self._feed_tree.column("kind",  width=70,  stretch=False, anchor="center")
+        self._feed_tree.column("title", width=260, stretch=True)
+        self._feed_tree.column("price", width=120, stretch=False, anchor="center")
 
         self._feed_tree.tag_configure("NEW",
                                       background=self.FEED_NEW_BG,
-                                      foreground="#ffffff")
+                                      foreground=AppTheme.FG_WHITE,
+                                      font=self.FONT_B)
         self._feed_tree.tag_configure("CHANGED",
                                       background=self.FEED_CHANGED_BG,
-                                      foreground="#ffffff")
+                                      foreground=AppTheme.FG_WHITE,
+                                      font=self.FONT_B)
         self._feed_tree.tag_configure("DELETED",
                                       background=self.FEED_DELETED_BG,
-                                      foreground="#ffffff")
+                                      foreground=AppTheme.FG_WHITE,
+                                      font=self.FONT_B)
         self._feed_tree.tag_configure("EMPTY",    foreground=self.FG_DIM)
 
         feed_vsb = self._vsb(feed_frame, self._feed_tree.yview)
@@ -384,8 +388,8 @@ class ImotScraperGUI:
         tree.column('Link',       width=250)
 
         # Colour-code by status
-        tree.tag_configure('Active',   foreground='green')
-        tree.tag_configure('Inactive', foreground='red')
+        tree.tag_configure('Active',   foreground='#ffffff', font=self.FONT_B)
+        tree.tag_configure('Inactive', foreground='#ffffff', font=self.FONT_B)
 
         vsb = self._vsb(main_frame, tree.yview)
         hsb = self._hsb(main_frame, tree.xview)
@@ -722,7 +726,7 @@ class ImotScraperGUI:
         for s in searches:
             RoundedButton(
                 button_frame,
-                text=f"View: {s['search_name']}",
+                text=f"Properties: {s['search_name']}",
                 bg=AppTheme.BTN_PURPLE, hover_bg=AppTheme.BTN_PURPLE_H,
                 command=lambda name=s['search_name']: self.view_search_results(name),
             ).pack(side=tk.LEFT, padx=5, pady=5)
@@ -872,8 +876,10 @@ class ImotScraperGUI:
         if not self.email_entries:
              add_email_field(email_value="")
         
-        save_btn = ttk.Button(main_frame, text="Save Changes" if action == "edit" else "Save Search", 
-                              command=lambda: self._save_dialog_data(dialog, url_entry.get(), name_entry.get(), item_id))
+        save_btn = RoundedButton(main_frame,
+                                 text="Save Changes" if action == "edit" else "Save Search",
+                                 bg=AppTheme.BTN_GREEN, hover_bg=AppTheme.BTN_GREEN_H,
+                                 command=lambda: self._save_dialog_data(dialog, url_entry.get(), name_entry.get(), item_id))
         save_btn.grid(row=3, column=1, pady=10, sticky='E')
         
         dialog.grab_set() 

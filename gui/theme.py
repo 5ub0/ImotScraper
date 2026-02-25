@@ -52,9 +52,10 @@ class AppTheme:
     BTN_DEFAULT_H = "#4a4a4a"
 
     # ── Feed row backgrounds ──────────────────────────────────────────────────
-    FEED_NEW_BG     = "#8fda94"   # NEW listing  — dark green
-    FEED_CHANGED_BG = "#da926b"   # price change — deep orange
-    FEED_DELETED_BG = "#aa5f5f"   # inactive     — dark red
+    FEED_NEW_BG     = "#4da044"   # NEW listing  — green
+    FEED_CHANGED_BG = "#bbcf46"   # price change — yellow-green
+    FEED_DELETED_BG = "#a85a5a"   # inactive     — muted red
+    # foreground for all feed rows is FG_WHITE (#ffffff)
 
     # ── Typography ────────────────────────────────────────────────────────────
     FONT    = ("Segoe UI", 9)
@@ -139,6 +140,20 @@ def apply_theme(root: tk.Tk) -> None:
           foreground=[("selected", t.FG_WHITE)])
     s.map("Treeview.Heading",
           background=[("active", t.BG3)])
+
+    # Feed treeview — extra row height + darker field background creates
+    # a visible 2 px "border" gap between coloured rows
+    s.configure("Feed.Treeview",
+                background=t.BG2, foreground=t.FG,
+                fieldbackground="#1a1a1a",   # darker than BG2 → gap colour
+                rowheight=t.ROW_H + 4,       # extra space = gap shows around row
+                bordercolor=t.BG3, font=t.FONT)
+    s.configure("Feed.Treeview.Heading",
+                background=t.BG3, foreground=t.FG,
+                relief="flat", font=t.FONT_B)
+    s.map("Feed.Treeview",
+          background=[("selected", t.ACCENT)],
+          foreground=[("selected", t.FG_WHITE)])
 
     # ── Slim scrollbars ───────────────────────────────────────────────────────
     for orient in ("Vertical", "Horizontal"):
