@@ -81,6 +81,17 @@ class ImotScraperGUI:
     GREEN    = "#4caf50"
     ORANGE   = "#ff8c42"
     YELLOW   = "#f0c040"
+    # Button accent colours
+    BTN_GREEN  = "#2e7d32"   # Add New Search, Run Scraping Now
+    BTN_GREEN_H= "#388e3c"
+    BTN_RED    = "#b71c1c"   # Remove Selected
+    BTN_RED_H  = "#c62828"
+    BTN_PURPLE = "#6a1b9a"   # View:[name] buttons
+    BTN_PURPLE_H="#7b1fa2"
+    # Feed row background colours (with white text)
+    FEED_NEW_BG     = "#1b5e20"   # dark green
+    FEED_CHANGED_BG = "#e65100"   # deep orange
+    FEED_DELETED_BG = "#7f0000"   # dark red
     FONT     = ("Segoe UI", 9)
     FONT_B   = ("Segoe UI", 9, "bold")
     FONT_LG  = ("Segoe UI", 11, "bold")
@@ -133,13 +144,40 @@ class ImotScraperGUI:
         s.configure("TEntry", fieldbackground=self.BG2, foreground=self.FG,
                     insertcolor=self.FG, bordercolor=self.BG3)
 
-        # Buttons
+        # Buttons — base style (rounded feel: no relief border, generous padding)
         s.configure("TButton",
                     background=self.BG3, foreground=self.FG,
                     bordercolor=self.BG3, focusthickness=0,
-                    padding=(8, 4), font=self.FONT_B)
+                    relief="flat", padding=(10, 5), font=self.FONT_B)
         s.map("TButton",
               background=[("active", self.ACCENT), ("disabled", self.BG2)],
+              foreground=[("disabled", self.FG_DIM)])
+
+        # Green button (Add New Search, Run Scraping Now)
+        s.configure("Green.TButton",
+                    background=self.BTN_GREEN, foreground="#ffffff",
+                    bordercolor=self.BTN_GREEN, focusthickness=0,
+                    relief="flat", padding=(10, 5), font=self.FONT_B)
+        s.map("Green.TButton",
+              background=[("active", self.BTN_GREEN_H), ("disabled", self.BG2)],
+              foreground=[("disabled", self.FG_DIM)])
+
+        # Red button (Remove Selected)
+        s.configure("Red.TButton",
+                    background=self.BTN_RED, foreground="#ffffff",
+                    bordercolor=self.BTN_RED, focusthickness=0,
+                    relief="flat", padding=(10, 5), font=self.FONT_B)
+        s.map("Red.TButton",
+              background=[("active", self.BTN_RED_H), ("disabled", self.BG2)],
+              foreground=[("disabled", self.FG_DIM)])
+
+        # Purple button (View:[name])
+        s.configure("Purple.TButton",
+                    background=self.BTN_PURPLE, foreground="#ffffff",
+                    bordercolor=self.BTN_PURPLE, focusthickness=0,
+                    relief="flat", padding=(10, 5), font=self.FONT_B)
+        s.map("Purple.TButton",
+              background=[("active", self.BTN_PURPLE_H), ("disabled", self.BG2)],
               foreground=[("disabled", self.FG_DIM)])
 
         # Treeview
@@ -289,41 +327,54 @@ class ImotScraperGUI:
         upper_section = ttk.Frame(paned)
         
         # URLs List Frame
-        urls_frame = ttk.LabelFrame(upper_section, text="Search URL List", padding=10)
+        urls_frame = ttk.LabelFrame(upper_section, text="Saved Searches", padding=10)
         urls_frame.pack(fill=tk.BOTH, expand=True, pady=(0, 10))
-        
-        # URLs Treeview with scrollbars
-        tree_frame = ttk.Frame(urls_frame)
-        tree_frame.pack(fill=tk.BOTH, expand=True)
-        
-        self.tree = ttk.Treeview(tree_frame, columns=('Search Name', 'Emails', 'URL'), show='headings', height=6)
-        
-        self.tree.heading('Search Name', text='Search Name')
-        self.tree.heading('Emails', text='Subscribed Emails')
-        self.tree.heading('URL', text='URL')
 
-        self.tree.column('Search Name', width=150)
-        self.tree.column('Emails', width=200)
-        self.tree.column('URL', width=350)
-        
+        # Left: treeview — right: action buttons
+        list_container = ttk.Frame(urls_frame)
+        list_container.pack(fill=tk.BOTH, expand=True)
+        list_container.columnconfigure(0, weight=1)
+        list_container.rowconfigure(0, weight=1)
+
+        # URLs Treeview with scrollbar — names only
+        tree_frame = ttk.Frame(list_container)
+        tree_frame.grid(row=0, column=0, sticky='nsew')
+        tree_frame.columnconfigure(0, weight=1)
+        tree_frame.rowconfigure(0, weight=1)
+
+        self.tree = ttk.Treeview(tree_frame, columns=('Search Name',), show='headings', height=6)
+        self.tree.heading('Search Name', text='Search Name')
+        self.tree.column('Search Name', stretch=True)
+
         tree_vsb = self._vsb(tree_frame, self.tree.yview)
-        tree_hsb = self._hsb(tree_frame, self.tree.xview)
-        self.tree.configure(yscrollcommand=tree_vsb.set, xscrollcommand=tree_hsb.set)
-        
+        self.tree.configure(yscrollcommand=tree_vsb.set)
+
         self.tree.grid(row=0, column=0, sticky='nsew')
         tree_vsb.grid(row=0, column=1, sticky='ns')
-        tree_hsb.grid(row=1, column=0, sticky='ew')
-        tree_frame.grid_columnconfigure(0, weight=1)
-        tree_frame.grid_rowconfigure(0, weight=1)
-        
-        # Control buttons frame
+
+        # Right: vertical button panel
+        btn_panel = ttk.Frame(list_container)
+        btn_panel.grid(row=0, column=1, sticky='ns', padx=(8, 0))
+
+        ttk.Button(btn_panel, text="Add New Search",
+                   style="Green.TButton",
+                   command=lambda: self.show_add_url_dialog(action="create")
+                   ).pack(fill=tk.X, pady=(0, 4))
+        ttk.Button(btn_panel, text="Edit Selected",
+                   command=self.edit_selected_url
+                   ).pack(fill=tk.X, pady=(0, 4))
+        ttk.Button(btn_panel, text="Remove Selected",
+                   style="Red.TButton",
+                   command=self.remove_url
+                   ).pack(fill=tk.X, pady=(0, 0))
+
+        # Control buttons frame (Run Scraping Now lives here)
         control_frame = ttk.Frame(upper_section)
         control_frame.pack(fill=tk.X, pady=(0, 10))
-        
-        ttk.Button(control_frame, text="Add New Search", command=lambda: self.show_add_url_dialog(action="create")).pack(side=tk.LEFT, padx=5)
-        ttk.Button(control_frame, text="Edit Selected", command=self.edit_selected_url).pack(side=tk.LEFT, padx=5)
-        ttk.Button(control_frame, text="Remove Selected", command=self.remove_url).pack(side=tk.LEFT, padx=5)
-        self.scrape_btn = ttk.Button(control_frame, text="Run Scraping Now", command=self.start_scraping)
+
+        self.scrape_btn = ttk.Button(control_frame, text="▶  Run Scraping Now",
+                                     style="Green.TButton",
+                                     command=self.start_scraping)
         self.scrape_btn.pack(side=tk.RIGHT, padx=5)
         
         # File view frame
@@ -369,8 +420,15 @@ class ImotScraperGUI:
         self._feed_tree.column("title", width=440, stretch=True)
         self._feed_tree.column("price", width=130, stretch=False, anchor="center")
 
-        self._feed_tree.tag_configure("NEW",      foreground=self.GREEN)
-        self._feed_tree.tag_configure("CHANGED",  foreground=self.ORANGE)
+        self._feed_tree.tag_configure("NEW",
+                                      background=self.FEED_NEW_BG,
+                                      foreground="#ffffff")
+        self._feed_tree.tag_configure("CHANGED",
+                                      background=self.FEED_CHANGED_BG,
+                                      foreground="#ffffff")
+        self._feed_tree.tag_configure("DELETED",
+                                      background=self.FEED_DELETED_BG,
+                                      foreground="#ffffff")
         self._feed_tree.tag_configure("EMPTY",    foreground=self.FG_DIM)
 
         feed_vsb = self._vsb(feed_frame, self._feed_tree.yview)
@@ -773,8 +831,8 @@ class ImotScraperGUI:
             ttk.Button(
                 button_frame,
                 text=f"View: {s['search_name']}",
+                style="Purple.TButton",
                 command=lambda name=s['search_name']: self.view_search_results(name),
-                width=22
             ).pack(side=tk.LEFT, padx=5, pady=5)
 
     def refresh_file_view(self):
@@ -788,17 +846,29 @@ class ImotScraperGUI:
         if not selected_items:
             messagebox.showwarning("Warning", "Please select a search to edit.")
             return
-        
+
         item_id = selected_items[0]
-        values = self.tree.item(item_id)['values']
-        
-        emails = values[1].split(';')
-        
+        search_name = self.tree.item(item_id)['values'][0]
+
+        # Look up the full record from the DB (treeview now shows names only)
+        search_record = None
+        if self.controller:
+            for s in self.controller.get_all_searches():
+                if s['search_name'] == search_name:
+                    search_record = s
+                    break
+
+        if not search_record:
+            messagebox.showerror("Error", f"Could not find search '{search_name}' in database.")
+            return
+
+        emails = search_record.get('emails', '').split(';') if search_record.get('emails') else ['']
+
         self.show_add_url_dialog(
             action="edit",
             item_id=item_id,
-            url=values[2],
-            search_name=values[0],
+            url=search_record.get('url', ''),
+            search_name=search_name,
             emails=emails
         )
 
@@ -995,7 +1065,7 @@ class ImotScraperGUI:
         if self.controller:
             for s in self.controller.get_all_searches():
                 item_id = self.tree.insert('', tk.END,
-                    values=(s['search_name'], s['emails'], s['url']))
+                    values=(s['search_name'],))
                 self._search_ids[item_id] = s['id']
 
     def load_existing_urls(self):
@@ -1099,7 +1169,7 @@ class ImotScraperGUI:
         if self.scraper_thread.is_alive():
             self.root.after(500, self._check_scraper_thread)
         else:
-            self.scrape_btn.config(state=tk.NORMAL, text="Run Scraping Now")
+            self.scrape_btn.config(state=tk.NORMAL, text="▶  Run Scraping Now")
 
     def run_scraper(self):
         """Executes the scraper job (on-demand)."""
