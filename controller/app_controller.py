@@ -14,20 +14,15 @@ class AppController:
     """
     
     def __init__(self, gui=None, scraper=None, email_service=None, scheduler=None):
-        """
-        Initialize the controller with all major components.
-        
-        Args:
-            gui: GUI component (imot_gui.py)
-            scraper: Scraper component (imotBgScraper.py)
-            email_service: Email service component (email_service.py)
-            scheduler: Scheduler component (scheduler_service.py)
-        """
         self.gui = gui
         self.scraper = scraper
         self.email_service = email_service
         self.scheduler = scheduler
         self.logger = logging.getLogger(__name__)
+
+        # Expose the database manager via the scraper so other components
+        # (e.g. GUI) can query results without going through the scraper.
+        self.db = scraper.db if scraper else None
 
     def run_scraper(self) -> bool:
         """
@@ -109,8 +104,38 @@ class AppController:
             self.logger.info("Scraper workflow complete.")
         except Exception as e:
             self.logger.error(f"Error in scraper workflow: {e}", exc_info=True)
-            # Attempt to send failure notification
             try:
                 self.send_email_reports(False)
             except Exception as e2:
                 self.logger.error(f"Also failed to send failure notification: {e2}")
+
+    # ------------------------------------------------------------------
+    # Search management (delegates to db)
+    # ------------------------------------------------------------------
+
+    def get_all_searches(self):
+        return self.db.get_all_searches() if self.db else []
+
+    def add_search(self, search_name: str, url: str, emails: str = "") -> int:
+        if not self.db:
+            raise RuntimeError("Database not initialized")
+        return self.db.add_search(search_name, url, emails)
+
+    def update_search(self, search_id: int, search_name: str, url: str, emails: str = ""):
+        if not self.db:
+            raise RuntimeError("Database not initialized")
+        self.db.update_search(search_id, search_name, url, emails)
+
+    def delete_search(self, search_id: int):
+        if not self.db:
+            raise RuntimeError("Database not initialized")
+        self.db.delete_search(search_id)
+
+    def get_properties_for_search(self, search_name: str, status: str = None):
+        if not self.db:
+            return []
+        searches = self.db.get_all_searches()
+        match = next((s for s in searches if s["search_name"] == search_name), None)
+        if not match:
+            return []
+        return self.db.get_properties(match["id"], status)

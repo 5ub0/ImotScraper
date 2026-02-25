@@ -40,11 +40,15 @@ class TextHandler(logging.Handler):
     def __init__(self, text_widget):
         logging.Handler.__init__(self)
         self.text_widget = text_widget
-    
+
     def emit(self, record):
         msg = self.format(record) + '\n'
+        # Always schedule the widget update on the main thread (thread-safe)
+        self.text_widget.after(0, self._append, msg)
+
+    def _append(self, msg):
         self.text_widget.insert(tk.END, msg)
-        
+
         if 'http' in msg:
             line_start = self.text_widget.get("end-2c linestart", "end-2c lineend")
             url_start_pos = line_start.find('http')
@@ -52,7 +56,7 @@ class TextHandler(logging.Handler):
                 start_idx = f"end-2c linestart+{url_start_pos}c"
                 end_idx = f"end-2c linestart+{len(line_start)}c"
                 self.text_widget.tag_add("url", start_idx, end_idx)
-        
+
         self.text_widget.see(tk.END)
 
 # --- Main GUI Class ---
@@ -71,7 +75,8 @@ class ImotScraperGUI:
             os.makedirs(self.data_dir)
             
         self.scheduler_running = False
-        self.file_view_button_frame = None 
+        self.file_view_button_frame = None
+        self._search_ids = {}  # treeview item_id → DB search id
 
         self.root.protocol("WM_DELETE_WINDOW", self.on_closing)
 
@@ -156,17 +161,15 @@ class ImotScraperGUI:
         ttk.Button(control_frame, text="Add New Search", command=lambda: self.show_add_url_dialog(action="create")).pack(side=tk.LEFT, padx=5)
         ttk.Button(control_frame, text="Edit Selected", command=self.edit_selected_url).pack(side=tk.LEFT, padx=5)
         ttk.Button(control_frame, text="Remove Selected", command=self.remove_url).pack(side=tk.LEFT, padx=5)
-        ttk.Button(control_frame, text="Run Scraping Now", command=self.start_scraping).pack(side=tk.RIGHT, padx=5)
+        self.scrape_btn = ttk.Button(control_frame, text="Run Scraping Now", command=self.start_scraping)
+        self.scrape_btn.pack(side=tk.RIGHT, padx=5)
         
         # File view frame
-        file_view_frame = ttk.LabelFrame(upper_section, text="View CSV Files", padding=10)
+        file_view_frame = ttk.LabelFrame(upper_section, text="View Search Results", padding=10)
         file_view_frame.pack(fill=tk.X, pady=(0, 10))
         
         self.file_view_button_frame = ttk.Frame(file_view_frame)
         self.file_view_button_frame.pack(fill=tk.X, padx=5, pady=5)
-        
-        input_file = os.path.join(self.data_dir, 'inputURLS.csv')
-        self.load_file_view_buttons(self.file_view_button_frame, input_file)
         
         # Lower section (Log output)
         lower_section = ttk.Frame(paned)
@@ -181,22 +184,19 @@ class ImotScraperGUI:
         paned.add(lower_section, weight=60)
         
         self.setup_logging()
-        self.load_existing_urls()
+        self._load_searches_from_db()
+        self.load_file_view_buttons(self.file_view_button_frame)
 
     # --- Utility and UI Interaction Methods ---
 
-    def view_csv_file(self, filename):
-        """Opens a new window to display the contents of a specified CSV file."""
-        filepath = os.path.join(self.data_dir, filename)
-        if not os.path.exists(filepath):
-            messagebox.showerror("Error", f"File not found: {filepath}")
-            return
-            
+    def view_search_results(self, search_name: str):
+        """Opens a window showing all properties for a search directly from the DB."""
+        properties = self.controller.get_properties_for_search(search_name) if self.controller else []
+
         view_window = tk.Toplevel(self.root)
-        view_window.title(f"Viewing {filename}")
-        view_window.geometry("800x600")
-        view_window.minsize(600, 400)
-        
+        view_window.title(f"Results: {search_name}")
+        view_window.geometry("1200x600")
+        view_window.minsize(900, 400)
         view_window.rowconfigure(0, weight=1)
         view_window.columnconfigure(0, weight=1)
 
@@ -205,59 +205,93 @@ class ImotScraperGUI:
         main_frame.rowconfigure(0, weight=1)
         main_frame.columnconfigure(0, weight=1)
 
-        tree = ttk.Treeview(main_frame)
-        tree.grid(row=0, column=0, sticky='nsew')
+        columns = ('Status', 'Title', 'Location', 'Price', 'First Seen', 'Last Seen', 'Link')
+        tree = ttk.Treeview(main_frame, columns=columns, show='headings')
 
-        vsb = ttk.Scrollbar(main_frame, orient="vertical", command=tree.yview)
-        vsb.grid(row=0, column=1, sticky='ns')
+        tree.heading('Status',     text='Status')
+        tree.heading('Title',      text='Title')
+        tree.heading('Location',   text='Location')
+        tree.heading('Price',      text='Current Price')
+        tree.heading('First Seen', text='First Seen')
+        tree.heading('Last Seen',  text='Last Seen')
+        tree.heading('Link',       text='Link')
+
+        tree.column('Status',     width=80,  anchor='center')
+        tree.column('Title',      width=200)
+        tree.column('Location',   width=200)
+        tree.column('Price',      width=150)
+        tree.column('First Seen', width=140, anchor='center')
+        tree.column('Last Seen',  width=140, anchor='center')
+        tree.column('Link',       width=250)
+
+        # Colour-code by status
+        tree.tag_configure('Active',   foreground='green')
+        tree.tag_configure('Inactive', foreground='grey')
+
+        vsb = ttk.Scrollbar(main_frame, orient="vertical",   command=tree.yview)
         hsb = ttk.Scrollbar(main_frame, orient="horizontal", command=tree.xview)
-        hsb.grid(row=1, column=0, sticky='ew')
         tree.configure(yscrollcommand=vsb.set, xscrollcommand=hsb.set)
+        tree.grid(row=0, column=0, sticky='nsew')
+        vsb.grid(row=0, column=1, sticky='ns')
+        hsb.grid(row=1, column=0, sticky='ew')
 
-        try:
-            with open(filepath, 'r', encoding='utf-8') as file:
-                csv_reader = csv.reader(file)
-                headers = next(csv_reader)
-                tree['columns'] = headers
-                tree['show'] = 'headings'
+        for prop in properties:
+            # Fetch current price from price_history
+            ph = self.controller.db.get_price_history(prop["id"]) if self.controller and self.controller.db else []
+            current_price = next((r["price"] for r in ph if r["price_status"] == "Current"), "—")
 
-                for header in headers:
-                    tree.heading(header, text=header)
-                    tree.column(header, width=100)
+            tree.insert("", tk.END,
+                values=(
+                    prop["status"],
+                    prop["title"] or "—",
+                    prop.get("location") or "—",
+                    current_price,
+                    prop["first_seen"][:16],
+                    prop["last_seen"][:16],
+                    prop["link"] or "—",
+                ),
+                tags=(prop["status"],)
+            )
 
-                for row in csv_reader:
-                    tree.insert("", tk.END, values=row)
+        # Make links clickable — Link is now column #7
+        def on_click(event):
+            item = tree.identify_row(event.y)
+            col  = tree.identify_column(event.x)
+            if item and col == "#7":
+                link = tree.item(item)["values"][6]
+                if link and link != "—":
+                    webbrowser.open(link)
+        tree.bind("<Button-1>", on_click)
 
-        except Exception as e:
-            messagebox.showerror("Error", f"Error reading file: {str(e)}")
+        # Summary label
+        active_count   = sum(1 for p in properties if p["status"] == "Active")
+        inactive_count = len(properties) - active_count
+        ttk.Label(view_window,
+                  text=f"Total: {len(properties)}  |  Active: {active_count}  |  Inactive: {inactive_count}",
+                  foreground="gray"
+                 ).grid(row=1, column=0, pady=5)
 
-    def load_file_view_buttons(self, button_frame, input_file):
-        """Helper to create or destroy file view buttons."""
-        
+    def load_file_view_buttons(self, button_frame):
+        """Rebuild the 'View Results' buttons from the searches in the DB."""
         for widget in button_frame.winfo_children():
             widget.destroy()
-            
-        if os.path.exists(input_file):
-            try:
-                with open(input_file, 'r', encoding='utf-8') as f:
-                    reader = csv.DictReader(f)
-                    for row in reader:
-                        filename = row['FileName']
-                        filepath = os.path.join(self.data_dir, filename)
-                        if os.path.exists(filepath):
-                            ttk.Button(
-                                button_frame, 
-                                text=f"Open {filename.replace('.csv', '')}",
-                                command=lambda f=filename: self.view_csv_file(f),
-                                width=20
-                            ).pack(side=tk.LEFT, padx=5, pady=5)
-            except Exception as e:
-                logging.error(f"Error loading file view buttons: {e}")
+
+        if not self.controller:
+            return
+
+        searches = self.controller.get_all_searches()
+        for s in searches:
+            ttk.Button(
+                button_frame,
+                text=f"View: {s['search_name']}",
+                command=lambda name=s['search_name']: self.view_search_results(name),
+                width=22
+            ).pack(side=tk.LEFT, padx=5, pady=5)
 
     def refresh_file_view(self):
-        """Triggers a reload of the file view buttons after an add/remove operation."""
-        input_file = os.path.join(self.data_dir, 'inputURLS.csv')
-        self.load_file_view_buttons(self.file_view_button_frame, input_file)
+        """Reloads the result-view buttons and the search treeview from the DB."""
+        self.load_file_view_buttons(self.file_view_button_frame)
+        self._load_searches_from_db()
 
     def edit_selected_url(self):
         """Handles the 'Edit Selected' button click."""
@@ -386,116 +420,92 @@ class ImotScraperGUI:
 
     def _save_dialog_data(self, dialog, url, search_name_display, item_id=None):
         """Processes and saves data from the Add/Edit Search dialog."""
-        
+
         url = url.strip()
         search_name_display = search_name_display.strip()
-        
+
         if not url or not search_name_display:
             messagebox.showerror("Error", "URL and Search Name are required.", parent=dialog)
             return
 
-        filename = search_name_display + '.csv'
-        
+        if not (url.startswith("http://") or url.startswith("https://")):
+            messagebox.showerror(
+                "Invalid URL",
+                "URL must start with http:// or https://\n\nPlease check that you pasted the URL into the URL field.",
+                parent=dialog,
+            )
+            return
+
         emails = []
         for entry in self.email_entries:
             email = entry.get().strip()
             if email:
-                if re.match(r"[^@]+@[^@]+\.[^@]+", email): 
+                if re.match(r"[^@]+@[^@]+\.[^@]+", email):
                     emails.append(email)
                 else:
                     messagebox.showerror("Error", f"Invalid email format: {email}", parent=dialog)
                     return
-        
-        email_string = ";".join(emails) 
-        
-        treeview_values = (search_name_display, email_string, url)
-        
+
+        email_string = ";".join(emails)
+
+        if not self.controller:
+            messagebox.showerror("Error", "Controller not available.", parent=dialog)
+            return
+
         if item_id:
-            self.tree.item(item_id, values=treeview_values)
-            logging.info(f"Edited search: {search_name_display}")
+            # Edit: look up the DB id stored in our mapping
+            search_id = self._search_ids.get(item_id)
+            if search_id is None:
+                messagebox.showerror("Error", "Cannot find DB record to update.", parent=dialog)
+                return
+            self.controller.update_search(search_id, search_name_display, url, email_string)
+            logging.info(f"Updated search: {search_name_display}")
         else:
-            self.tree.insert('', tk.END, values=treeview_values)
+            self.controller.add_search(search_name_display, url, email_string)
             logging.info(f"Added new search: {search_name_display}")
-            
-        self.save_urls_to_csv()
-        self.refresh_file_view() 
+
+        self.refresh_file_view()
         dialog.destroy()
 
     # --- CRUD Operations ---
-    
+
     def remove_url(self):
         selected_items = self.tree.selection()
         if not selected_items:
-            return 
+            return
+
+        if not self.controller:
+            messagebox.showerror("Error", "Controller not available.")
+            return
 
         for item in selected_items:
-            values = self.tree.item(item)['values']
-            
-            search_name_display = values[0]
-            filename_to_delete = f"{search_name_display}.csv" 
-            
-            filepath = os.path.join(self.data_dir, filename_to_delete)
-            if os.path.exists(filepath):
-                try:
-                    os.remove(filepath)
-                    logging.info(f"Successfully deleted data file: {filepath}")
-                except OSError as e:
-                    logging.error(f"Error deleting file {filepath}: {e}")
-
-            filepath_2 = os.path.join(self.data_dir, 'NewRecords_'+filename_to_delete)
-            if os.path.exists(filepath_2):
-                try:
-                    os.remove(filepath_2)
-                    logging.info(f"Successfully deleted data file: {filepath_2}")
-                except OSError as e:
-                    logging.error(f"Error deleting file {filepath_2}: {e}")
-                
+            search_id = self._search_ids.get(item)
+            if search_id is not None:
+                self.controller.delete_search(search_id)
+                logging.info(f"Deleted search id={search_id} from DB.")
             self.tree.delete(item)
-            
-        self.save_urls_to_csv()
-        self.refresh_file_view()
+            self._search_ids.pop(item, None)
+
+        self.load_file_view_buttons(self.file_view_button_frame)
+
+    def _load_searches_from_db(self):
+        """Load all searches from the DB into the treeview."""
+        self._search_ids.clear()
+        for item in self.tree.get_children():
+            self.tree.delete(item)
+        if self.controller:
+            for s in self.controller.get_all_searches():
+                item_id = self.tree.insert('', tk.END,
+                    values=(s['search_name'], s['emails'], s['url']))
+                self._search_ids[item_id] = s['id']
 
     def load_existing_urls(self):
-        input_file = os.path.join(self.data_dir, 'inputURLS.csv')
-        if os.path.exists(input_file):
-            try:
-                with open(input_file, 'r', encoding='utf-8') as f:
-                    reader = csv.DictReader(f)
-                    for row in reader:
-                        url = row.get('URL', '')
-                        filename = row.get('FileName', '')
-                        emails = row.get('Send to Emails', '')
-                        
-                        if url and filename:
-                            search_name_display = filename.replace('.csv', '')
-                            self.tree.insert('', tk.END, values=(search_name_display, emails, url))
-            except Exception as e:
-                 logging.error(f"Error loading existing URLs: {e}")
+        """Backward-compat shim – delegates to _load_searches_from_db."""
+        self._load_searches_from_db()
 
     def save_urls_to_csv(self):
-        """Saves all current Treeview data to inputURLS.csv."""
-        input_file = os.path.join(self.data_dir, 'inputURLS.csv')
-        
-        final_data = []
-        for item in self.tree.get_children():
-            search_name_display, emails, url = self.tree.item(item)['values']
-            
-            filename = f"{search_name_display}.csv"
-            
-            final_data.append({
-                'URL': url,
-                'FileName': filename,
-                'Send to Emails': emails 
-            })
-
-        fieldnames = ['URL', 'FileName', 'Send to Emails']
-        
-        with open(input_file, 'w', newline='', encoding='utf-8') as f:
-             writer = csv.DictWriter(f, fieldnames=fieldnames)
-             writer.writeheader()
-             writer.writerows(final_data)
-        
-        logging.info("URL list saved to inputURLS.csv.")
+        """No-op: persistence is now handled by the database."""
+        pass
 
     def toggle_schedule(self):
         """Checks the current scheduler status and toggles the action (Start/Stop)."""
@@ -561,39 +571,47 @@ class ImotScraperGUI:
             messagebox.showwarning("Warning", "The scheduler is currently running. Please stop it first before running an on-demand job.")
             return
 
+        if self.controller:
+            searches = self.controller.get_all_searches()
+            if not searches:
+                messagebox.showwarning(
+                    "No Searches",
+                    "No searches are configured.\nPlease add at least one search URL via 'Add New Search' first."
+                )
+                return
+
         self.log_text.delete(1.0, tk.END)
+        logging.info(f"Starting scraper for {len(searches)} search(es)...")
+        self.scrape_btn.config(state=tk.DISABLED, text="Scraping...")
         self.scraper_thread = threading.Thread(target=self.run_scraper, daemon=True)
         self.scraper_thread.start()
         self.root.after(100, self._check_scraper_thread)
-    
+
     def _check_scraper_thread(self):
-        """Check if scraper thread is still running and update UI accordingly"""
+        """Poll the scraper thread; re-enable the button when it finishes."""
         if self.scraper_thread.is_alive():
-            # Thread is still running, check again in 500ms
             self.root.after(500, self._check_scraper_thread)
+        else:
+            self.scrape_btn.config(state=tk.NORMAL, text="Run Scraping Now")
     
     def run_scraper(self):
         """Executes the scraper job (on-demand)."""
-        
+        import traceback as _tb
         try:
             self.root.after(0, lambda: logging.info("Starting on-demand scraper run..."))
             print(f"[GUI] Starting scraper thread execution")
-            
+
             if not self.controller:
                 error_msg = "Controller not initialized - cannot run scraper"
                 self.root.after(0, lambda: logging.error(error_msg))
-                print(f"[GUI] ERROR: {error_msg}")
                 return
-            
+
             print(f"[GUI] Running scraper via controller...")
-            # This will run in a background thread, so it won't block the GUI
             success = self.controller.run_scraper()
             print(f"[GUI] Scraper completed with result: {success}")
-            
-            # Queue all remaining operations to the main thread
+
             def finalize_scraper_run(result):
                 try:
-                    print(f"[GUI] Finalizing scraper run with result: {result}")
                     logging.info("Sending reports...")
                     self.controller.send_email_reports(result)
                     logging.info("Scraping completed! Check the output above for results.")
@@ -601,18 +619,15 @@ class ImotScraperGUI:
                 except Exception as e:
                     print(f"[GUI] Error during finalization: {e}")
                     logging.error(f"Error finalizing scraper run: {e}")
-                    import traceback
-                    traceback.print_exc()
-            
-            # Queue the finalization to the main thread
+                    _tb.print_exc()
+
             self.root.after(0, lambda: finalize_scraper_run(success))
-            
+
         except Exception as e:
             error_msg = f"Critical Error during on-demand run: {str(e)}"
             self.root.after(0, lambda msg=error_msg: logging.error(msg))
-            print(f"[GUI] Exception caught: {e}")
-            import traceback
-            traceback.print_exc()
+            print(f"[GUI] UNCAUGHT EXCEPTION in scraper thread:")
+            _tb.print_exc()
             
 
     def on_closing(self):

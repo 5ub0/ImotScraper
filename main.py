@@ -6,6 +6,15 @@ Initializes all components and coordinates their execution.
 import logging
 import sys
 import os
+import threading
+import traceback
+
+# Catch exceptions from background threads and print them visibly
+def _thread_excepthook(args):
+    print(f"\n[THREAD CRASH] Thread: {args.thread.name}", file=sys.stderr)
+    traceback.print_exception(args.exc_type, args.exc_value, args.exc_traceback)
+
+threading.excepthook = _thread_excepthook
 
 # Configure logging
 logging.basicConfig(
@@ -31,6 +40,12 @@ def main():
     try:
         # Initialize core components
         scraper = ImotScraper(data_dir='data')
+
+        # One-time migration: import searches from inputURLS.csv if DB is empty
+        csv_path = os.path.join('data', 'inputURLS.csv')
+        if not scraper.db.get_all_searches() and os.path.exists(csv_path):
+            migrated = scraper.db.migrate_from_csv(csv_path)
+            logging.info(f"Migrated {migrated} search(es) from inputURLS.csv into the database.")
         email_service = ReportMailer()
         scheduler = ScraperScheduler(
             report_mailer=email_service,
