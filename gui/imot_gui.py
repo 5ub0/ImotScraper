@@ -4,24 +4,19 @@ Delegates business logic to the controller module.
 """
 
 import tkinter as tk
-from tkinter import ttk, scrolledtext, filedialog, messagebox
+from tkinter import ttk, filedialog, messagebox
 import logging
 import threading
 import queue
-import csv
 import webbrowser
 import os
 import re
-import time
 from dotenv import load_dotenv
+
+from gui.theme import AppTheme, apply_theme, RoundedButton
 
 load_dotenv()
 
-# --- CustomText and TextHandler classes ---
-class CustomText(scrolledtext.ScrolledText):
-    """Kept as a no-op stub — no longer used for logging but retained to avoid
-    removing the scrolledtext import which may be used by other code."""
-    pass
 
 
 class ResultsFeedHandler(logging.Handler):
@@ -71,30 +66,29 @@ class ResultsFeedHandler(logging.Handler):
 
 class ImotScraperGUI:
 
-    # ── Colour palette ───────────────────────────────────────────────────────
-    BG       = "#1e1e1e"
-    BG2      = "#2b2b2b"
-    BG3      = "#333333"
-    FG       = "#e8e8e8"
-    FG_DIM   = "#888888"
-    ACCENT   = "#0d7aff"
-    GREEN    = "#4caf50"
-    ORANGE   = "#ff8c42"
-    YELLOW   = "#f0c040"
-    # Button accent colours
-    BTN_GREEN  = "#2e7d32"   # Add New Search, Run Scraping Now
-    BTN_GREEN_H= "#388e3c"
-    BTN_RED    = "#b71c1c"   # Remove Selected
-    BTN_RED_H  = "#c62828"
-    BTN_PURPLE = "#6a1b9a"   # View:[name] buttons
-    BTN_PURPLE_H="#7b1fa2"
-    # Feed row background colours (with white text)
-    FEED_NEW_BG     = "#1b5e20"   # dark green
-    FEED_CHANGED_BG = "#e65100"   # deep orange
-    FEED_DELETED_BG = "#7f0000"   # dark red
-    FONT     = ("Segoe UI", 9)
-    FONT_B   = ("Segoe UI", 9, "bold")
-    FONT_LG  = ("Segoe UI", 11, "bold")
+    # ── Design tokens — sourced from gui.theme so the GUI can reference them
+    #    as self.BG, self.FG etc. without importing AppTheme everywhere.
+    BG            = AppTheme.BG
+    BG2           = AppTheme.BG2
+    BG3           = AppTheme.BG3
+    FG            = AppTheme.FG
+    FG_DIM        = AppTheme.FG_DIM
+    ACCENT        = AppTheme.ACCENT
+    GREEN         = AppTheme.GREEN
+    ORANGE        = AppTheme.ORANGE
+    YELLOW        = AppTheme.YELLOW
+    BTN_GREEN     = AppTheme.BTN_GREEN
+    BTN_GREEN_H   = AppTheme.BTN_GREEN_H
+    BTN_RED       = AppTheme.BTN_RED
+    BTN_RED_H     = AppTheme.BTN_RED_H
+    BTN_PURPLE    = AppTheme.BTN_PURPLE
+    BTN_PURPLE_H  = AppTheme.BTN_PURPLE_H
+    FEED_NEW_BG     = AppTheme.FEED_NEW_BG
+    FEED_CHANGED_BG = AppTheme.FEED_CHANGED_BG
+    FEED_DELETED_BG = AppTheme.FEED_DELETED_BG
+    FONT   = AppTheme.FONT
+    FONT_B = AppTheme.FONT_B
+    FONT_LG= AppTheme.FONT_LG
 
     def __init__(self, root, controller=None):
         self.root = root
@@ -114,113 +108,10 @@ class ImotScraperGUI:
         self._gallery_win: tk.Toplevel | None = None   # single open gallery window
 
         self.root.protocol("WM_DELETE_WINDOW", self.on_closing)
-        self._apply_dark_theme()
+        apply_theme(self.root)
         self._set_dark_titlebar(self.root)
         self.setup_gui()
 
-    def _apply_dark_theme(self):
-        """Configure ttk styles for a dark, modern look."""
-        s = ttk.Style(self.root)
-        s.theme_use("clam")
-
-        # General
-        s.configure(".",
-                    background=self.BG, foreground=self.FG,
-                    font=self.FONT,
-                    troughcolor=self.BG2, bordercolor=self.BG3,
-                    darkcolor=self.BG2, lightcolor=self.BG3,
-                    insertcolor=self.FG, fieldbackground=self.BG2)
-
-        # Frames & LabelFrames
-        s.configure("TFrame",      background=self.BG)
-        s.configure("TLabelframe", background=self.BG, bordercolor=self.BG3)
-        s.configure("TLabelframe.Label", background=self.BG, foreground=self.FG_DIM,
-                    font=self.FONT_B)
-
-        # Labels
-        s.configure("TLabel", background=self.BG, foreground=self.FG, font=self.FONT)
-
-        # Entries
-        s.configure("TEntry", fieldbackground=self.BG2, foreground=self.FG,
-                    insertcolor=self.FG, bordercolor=self.BG3)
-
-        # Buttons — base style (rounded feel: no relief border, generous padding)
-        s.configure("TButton",
-                    background=self.BG3, foreground=self.FG,
-                    bordercolor=self.BG3, focusthickness=0,
-                    relief="flat", padding=(10, 5), font=self.FONT_B)
-        s.map("TButton",
-              background=[("active", self.ACCENT), ("disabled", self.BG2)],
-              foreground=[("disabled", self.FG_DIM)])
-
-        # Green button (Add New Search, Run Scraping Now)
-        s.configure("Green.TButton",
-                    background=self.BTN_GREEN, foreground="#ffffff",
-                    bordercolor=self.BTN_GREEN, focusthickness=0,
-                    relief="flat", padding=(10, 5), font=self.FONT_B)
-        s.map("Green.TButton",
-              background=[("active", self.BTN_GREEN_H), ("disabled", self.BG2)],
-              foreground=[("disabled", self.FG_DIM)])
-
-        # Red button (Remove Selected)
-        s.configure("Red.TButton",
-                    background=self.BTN_RED, foreground="#ffffff",
-                    bordercolor=self.BTN_RED, focusthickness=0,
-                    relief="flat", padding=(10, 5), font=self.FONT_B)
-        s.map("Red.TButton",
-              background=[("active", self.BTN_RED_H), ("disabled", self.BG2)],
-              foreground=[("disabled", self.FG_DIM)])
-
-        # Purple button (View:[name])
-        s.configure("Purple.TButton",
-                    background=self.BTN_PURPLE, foreground="#ffffff",
-                    bordercolor=self.BTN_PURPLE, focusthickness=0,
-                    relief="flat", padding=(10, 5), font=self.FONT_B)
-        s.map("Purple.TButton",
-              background=[("active", self.BTN_PURPLE_H), ("disabled", self.BG2)],
-              foreground=[("disabled", self.FG_DIM)])
-
-        # Treeview
-        s.configure("Treeview",
-                    background=self.BG2, foreground=self.FG,
-                    fieldbackground=self.BG2, rowheight=24,
-                    bordercolor=self.BG3, font=self.FONT)
-        s.configure("Treeview.Heading",
-                    background=self.BG3, foreground=self.FG,
-                    relief="flat", font=self.FONT_B)
-        s.map("Treeview",
-              background=[("selected", self.ACCENT)],
-              foreground=[("selected", "#ffffff")])
-        s.map("Treeview.Heading",
-              background=[("active", self.BG3)])
-
-        # Scrollbars — slim, flat, dark
-        s.configure("Slim.Vertical.TScrollbar",
-                    background=self.BG3, troughcolor=self.BG2,
-                    arrowcolor=self.BG3, bordercolor=self.BG2,
-                    width=8, arrowsize=0)
-        s.configure("Slim.Horizontal.TScrollbar",
-                    background=self.BG3, troughcolor=self.BG2,
-                    arrowcolor=self.BG3, bordercolor=self.BG2,
-                    width=8, arrowsize=0)
-        s.map("Slim.Vertical.TScrollbar",
-              background=[("active", self.ACCENT), ("pressed", self.ACCENT)])
-        s.map("Slim.Horizontal.TScrollbar",
-              background=[("active", self.ACCENT), ("pressed", self.ACCENT)])
-
-        # PanedWindow
-        s.configure("TPanedwindow", background=self.BG)
-
-        # Canvas / Entry inside dialogs
-        self.root.option_add("*Background",   self.BG)
-        self.root.option_add("*Foreground",   self.FG)
-        self.root.option_add("*Font",         self.FONT)
-        self.root.option_add("*Entry.Background",   self.BG2)
-        self.root.option_add("*Entry.Foreground",   self.FG)
-        self.root.option_add("*Text.Background",    self.BG2)
-        self.root.option_add("*Text.Foreground",    self.FG)
-        self.root.option_add("*Canvas.Background",  self.BG2)
-        
     def _vsb(self, parent, command):
         """Return a slim dark vertical scrollbar."""
         return ttk.Scrollbar(parent, orient="vertical",
@@ -356,25 +247,26 @@ class ImotScraperGUI:
         btn_panel = ttk.Frame(list_container)
         btn_panel.grid(row=0, column=1, sticky='ns', padx=(8, 0))
 
-        ttk.Button(btn_panel, text="Add New Search",
-                   style="Green.TButton",
-                   command=lambda: self.show_add_url_dialog(action="create")
-                   ).pack(fill=tk.X, pady=(0, 4))
-        ttk.Button(btn_panel, text="Edit Selected",
-                   command=self.edit_selected_url
-                   ).pack(fill=tk.X, pady=(0, 4))
-        ttk.Button(btn_panel, text="Remove Selected",
-                   style="Red.TButton",
-                   command=self.remove_url
-                   ).pack(fill=tk.X, pady=(0, 0))
+        RoundedButton(btn_panel, text="Add New Search",
+                      bg=AppTheme.BTN_GREEN, hover_bg=AppTheme.BTN_GREEN_H,
+                      command=lambda: self.show_add_url_dialog(action="create")
+                      ).pack(fill=tk.X, pady=(0, 4))
+        RoundedButton(btn_panel, text="Edit Selected",
+                      bg=AppTheme.BTN_DEFAULT, hover_bg=AppTheme.BTN_DEFAULT_H,
+                      command=self.edit_selected_url
+                      ).pack(fill=tk.X, pady=(0, 4))
+        RoundedButton(btn_panel, text="Remove Selected",
+                      bg=AppTheme.BTN_RED, hover_bg=AppTheme.BTN_RED_H,
+                      command=self.remove_url
+                      ).pack(fill=tk.X, pady=(0, 0))
 
         # Control buttons frame (Run Scraping Now lives here)
         control_frame = ttk.Frame(upper_section)
         control_frame.pack(fill=tk.X, pady=(0, 10))
 
-        self.scrape_btn = ttk.Button(control_frame, text="▶  Run Scraping Now",
-                                     style="Green.TButton",
-                                     command=self.start_scraping)
+        self.scrape_btn = RoundedButton(control_frame, text="▶  Run Scraping Now",
+                                        bg=AppTheme.BTN_GREEN, hover_bg=AppTheme.BTN_GREEN_H,
+                                        command=self.start_scraping)
         self.scrape_btn.pack(side=tk.RIGHT, padx=5)
         
         # File view frame
@@ -828,10 +720,10 @@ class ImotScraperGUI:
 
         searches = self.controller.get_all_searches()
         for s in searches:
-            ttk.Button(
+            RoundedButton(
                 button_frame,
                 text=f"View: {s['search_name']}",
-                style="Purple.TButton",
+                bg=AppTheme.BTN_PURPLE, hover_bg=AppTheme.BTN_PURPLE_H,
                 command=lambda name=s['search_name']: self.view_search_results(name),
             ).pack(side=tk.LEFT, padx=5, pady=5)
 
@@ -1217,11 +1109,8 @@ class ImotScraperGUI:
             logging.info("Stopping scheduler before exit...")
             if self.controller:
                 self.controller.stop_scheduler()
-        
-        time.sleep(0.5) 
-        
-        self.root.quit()
-        self.root.destroy()
+
+        self.root.after(500, self.root.destroy)
 
 
 def main(controller=None):
