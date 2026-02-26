@@ -139,3 +139,7 @@ class AppController:
         if not match:
             return []
         return self.db.get_properties(match["id"], status)
+
+    def get_all_scrape_runs(self, limit: int = 200):
+        """Return recent scrape run rows across all searches, newest first."""
+        return self.db.get_all_scrape_runs(limit) if self.db else []

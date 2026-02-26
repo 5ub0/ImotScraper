@@ -29,8 +29,8 @@ from controller.app_controller import AppController
 from scraper.imotBgScraper import ImotScraper
 from email_service_module.email_service import ReportMailer
 from scheduler.scheduler_service import ScraperScheduler
-from gui.imot_gui import ImotScraperGUI
-import tkinter as tk
+from gui.imot_gui_qt import ImotScraperMainWindow, build_stylesheet
+from PyQt6.QtWidgets import QApplication
 
 
 def main():
@@ -51,7 +51,7 @@ def main():
             report_mailer=email_service,
             scraper_function=scraper.execute
         )
-        
+
         # Create controller to coordinate components
         controller = AppController(
             gui=None,
@@ -59,15 +59,17 @@ def main():
             email_service=email_service,
             scheduler=scheduler
         )
-        
-        # Initialize and run GUI
-        root = tk.Tk()
-        gui = ImotScraperGUI(root, controller=controller)
-        controller.gui = gui
-        
+
+        # Initialize and run Qt GUI
+        app = QApplication(sys.argv)
+        app.setStyleSheet(build_stylesheet())
+        win = ImotScraperMainWindow(controller=controller)
+        controller.gui = win
+        win.show()
+
         logging.info("ImotScraper application started")
-        root.mainloop()
-        
+        sys.exit(app.exec())
+
     except Exception as e:
         logging.error(f"Failed to start application: {e}", exc_info=True)
         sys.exit(1)
