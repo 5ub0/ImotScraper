@@ -81,7 +81,7 @@ GUI  →  Controller  →  Scraper / DB / Scheduler
 - Delays: `REQUEST_DELAY = 1 s` between pages, `DETAIL_DELAY = 0.3 s` between detail fetches.
 - Log line formats (parsed by `ResultsFeedHandler` in the GUI):
   - `"New listing: {title} | price: {price} | search: {search_name} | {link}"`
-  - `"Price change: {title} {old} → {new} | search: {search_name}"`
+  - `"Price change: {title} | old: {old_price} | new: {new_price} | search: {search_name} | {link}"`
 
 ---
 

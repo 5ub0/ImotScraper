@@ -17,14 +17,13 @@ import os
 import queue
 import re
 import threading
-import webbrowser
 from typing import Optional
 
 from PyQt6.QtCore import (
-    Qt, QSize, QTimer, pyqtSignal, QObject, QRect,
+    Qt, QSize, QTimer, pyqtSignal, QObject, QRect, QUrl,
 )
 from PyQt6.QtGui import (
-    QColor, QFont, QBrush, QPixmap, QImage, QIcon, QPainter,
+    QColor, QFont, QBrush, QPixmap, QImage, QIcon, QPainter, QDesktopServices,
 )
 from PyQt6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QDialog,
@@ -167,12 +166,13 @@ class ResultsFeedHandler(logging.Handler):
     a FeedBridge signal (thread-safe — Qt handles cross-thread signals).
 
     Line formats:
-      "New listing: <title> | price: <price> | <link>"
-      "Price change: <title> <old> → <new>"
+      "New listing: <title> | price: <price> | search: <search> | <link>"
+      "Price change: <title> | old: <old> | new: <new> | search: <search>"
     """
 
     _RE_NEW        = re.compile(r"New listing: (.+?) \| price: (.+?) \| search: (.+?) \| (https?://\S+)")
-    _RE_CHANGED    = re.compile(r"Price change: (.+?) (\S+) → (\S+) \| search: (.+)")
+    _RE_CHANGED    = re.compile(r"Price change: (.+?) \| old: (.+?) \| new: (.+?) \| search: (.+?) \| (https?://\S+)")
+    _RE_DELETED    = re.compile(r"Removed listing: (.+?) \| search: (.+?) \| (https?://\S*)")
     _RE_PROCESSING = re.compile(r"Processing: (.+)")
 
     def __init__(self, bridge: FeedBridge) -> None:
@@ -199,7 +199,17 @@ class ResultsFeedHandler(logging.Handler):
                 "old_price":   m.group(2).strip(),
                 "price":       m.group(3).strip(),
                 "search_name": m.group(4).strip(),
-                "link":        "",
+                "link":        m.group(5).strip(),
+            })
+            return
+        m = self._RE_DELETED.search(msg)
+        if m:
+            self._bridge.event_received.emit({
+                "kind":        "DELETED",
+                "title":       m.group(1).strip(),
+                "price":       "—",
+                "search_name": m.group(2).strip(),
+                "link":        m.group(3).strip(),
             })
             return
         m = self._RE_PROCESSING.search(msg)
@@ -396,7 +406,9 @@ class GalleryWindow(QDialog):
                 f"color: {T.ACCENT}; text-decoration: underline;"
             )
             title_lbl.setCursor(Qt.CursorShape.PointingHandCursor)
-            title_lbl.mousePressEvent = lambda _e: webbrowser.open(link_url)
+            def _open_link(_event, u=link_url) -> None:
+                QDesktopServices.openUrl(QUrl(u))
+            title_lbl.mousePressEvent = _open_link
         info_layout.addWidget(QLabel("Title:"), row, 0, Qt.AlignmentFlag.AlignTop)
         info_layout.addWidget(title_lbl, row, 1, Qt.AlignmentFlag.AlignTop)
         row += 1
@@ -682,7 +694,7 @@ class ResultsWindow(QDialog):
         if col == 9:
             link = self._table.item(row, col)
             if link and link.text() != "—":
-                webbrowser.open(link.text())
+                QDesktopServices.openUrl(QUrl(link.text()))
 
     def _on_double_click(self, row: int, _col: int) -> None:
         # Prop is stored on the Status cell (col 0) via UserRole
@@ -796,7 +808,6 @@ class ImotScraperMainWindow(QMainWindow):
         _set_dark_titlebar(self)
 
         self._search_ids:     dict[str, int] = {}   # search_name → DB id
-        self._gallery_win:    Optional[GalleryWindow] = None
         self._scraper_thread: Optional[threading.Thread] = None
         self._scheduler_running = False
 
@@ -1102,10 +1113,8 @@ class ImotScraperMainWindow(QMainWindow):
         win.exec()
 
     def _open_gallery(self, prop: dict) -> None:
-        if self._gallery_win and not self._gallery_win.isHidden():
-            self._gallery_win.close()
-        self._gallery_win = GalleryWindow(self, prop, self.controller)
-        self._gallery_win.show()
+        gw = GalleryWindow(self, prop, self.controller)
+        gw.exec()
 
     # ── Feed ──────────────────────────────────────────────────────────────────
 
