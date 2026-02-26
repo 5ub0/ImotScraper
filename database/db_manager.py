@@ -525,6 +525,15 @@ class DatabaseManager:
             ).fetchall()
             return [dict(r) for r in rows]
 
+    def get_all_scrape_runs(self, limit: int = 200) -> List[Dict]:
+        """Return the most recent scrape runs across all searches, newest first."""
+        with self._get_connection() as conn:
+            rows = conn.execute(
+                "SELECT * FROM scrape_runs ORDER BY run_date DESC LIMIT ?",
+                (limit,)
+            ).fetchall()
+            return [dict(r) for r in rows]
+
     # ------------------------------------------------------------------
     # Search management (replaces inputURLS.csv)
     # ------------------------------------------------------------------

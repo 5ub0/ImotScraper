@@ -157,7 +157,8 @@ class _ListDelegate(QStyledItemDelegate):
 
 class FeedBridge(QObject):
     """Emits feed events (dict) on the Qt main thread via a signal."""
-    event_received = pyqtSignal(dict)
+    event_received  = pyqtSignal(dict)
+    search_progress = pyqtSignal(str)   # emits search_name when scraper starts each search
 
 
 class ResultsFeedHandler(logging.Handler):
@@ -170,8 +171,9 @@ class ResultsFeedHandler(logging.Handler):
       "Price change: <title> <old> → <new>"
     """
 
-    _RE_NEW     = re.compile(r"New listing: (.+?) \| price: (.+?) \| search: (.+?) \| (https?://\S+)")
-    _RE_CHANGED = re.compile(r"Price change: (.+?) (\S+) → (\S+) \| search: (.+)")
+    _RE_NEW        = re.compile(r"New listing: (.+?) \| price: (.+?) \| search: (.+?) \| (https?://\S+)")
+    _RE_CHANGED    = re.compile(r"Price change: (.+?) (\S+) → (\S+) \| search: (.+)")
+    _RE_PROCESSING = re.compile(r"Processing: (.+)")
 
     def __init__(self, bridge: FeedBridge) -> None:
         super().__init__()
@@ -199,6 +201,10 @@ class ResultsFeedHandler(logging.Handler):
                 "search_name": m.group(4).strip(),
                 "link":        "",
             })
+            return
+        m = self._RE_PROCESSING.search(msg)
+        if m:
+            self._bridge.search_progress.emit(m.group(1).strip())
 
 
 # ── Add / Edit Search dialog ───────────────────────────────────────────────────
@@ -308,9 +314,6 @@ class GalleryWindow(QDialog):
         self.resize(880, 800)
         self.setMinimumSize(600, 500)
         _set_dark_titlebar(self)
-        self.setWindowFlags(
-            self.windowFlags() | Qt.WindowType.WindowStaysOnTopHint
-        )
 
         self._prop       = prop
         self._controller = controller
@@ -557,7 +560,10 @@ class ResultsWindow(QDialog):
         self._table.setColumnWidth(5, 130)
         self._table.setColumnWidth(6, 60)
 
-        self._populate(properties, controller)
+        self._populate(
+            sorted(properties, key=lambda p: (0 if p["status"] == "Active" else 1)),
+            controller,
+        )
         layout.addWidget(self._table)
 
         # Summary bar
@@ -672,6 +678,7 @@ class ImotScraperMainWindow(QMainWindow):
         # Feed bridge: log handler → Qt signal → slot on main thread
         self._feed_bridge = FeedBridge()
         self._feed_bridge.event_received.connect(self._append_feed_row)
+        self._feed_bridge.search_progress.connect(self._on_search_progress)
         self._feed_link_map: dict[int, str] = {}   # feed table row → link
 
         self._feed_handler = ResultsFeedHandler(self._feed_bridge)
@@ -773,9 +780,10 @@ class ImotScraperMainWindow(QMainWindow):
         view_group = QGroupBox("View Search Results")
         view_layout = QVBoxLayout(view_group)
         self._view_btn_container = QWidget()
-        self._view_btn_layout    = QHBoxLayout(self._view_btn_container)
-        self._view_btn_layout.setAlignment(Qt.AlignmentFlag.AlignLeft)
+        self._view_btn_layout    = QGridLayout(self._view_btn_container)
+        self._view_btn_layout.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignTop)
         self._view_btn_layout.setSpacing(8)
+        self._view_btn_layout.setContentsMargins(0, 0, 0, 0)
         view_layout.addWidget(self._view_btn_container)
         upper_layout.addWidget(view_group)
 
@@ -801,6 +809,11 @@ class ImotScraperMainWindow(QMainWindow):
         self._status_counts_lbl.setStyleSheet(f"color: {T.FG_DIM}; font-weight: bold;")
         self._status_counts_lbl.setAlignment(Qt.AlignmentFlag.AlignRight)
         status_layout.addWidget(self._status_counts_lbl)
+
+        self._history_btn = _styled_btn("📋  Run History", min_width=0)
+        self._history_btn.setFixedHeight(26)
+        self._history_btn.clicked.connect(self._open_run_history)
+        status_layout.addWidget(self._history_btn)
 
         lower_layout.addWidget(status_bar)
 
@@ -859,11 +872,13 @@ class ImotScraperMainWindow(QMainWindow):
 
         if not self.controller:
             return
-        for s in self.controller.get_all_searches():
-            btn = _styled_btn(f"Properties: {s['search_name']}", style="purple", min_width=0)
+        COLS = 3
+        for idx, s in enumerate(self.controller.get_all_searches()):
+            btn = _styled_btn(s['search_name'], style="purple", min_width=0)
             name = s["search_name"]
             btn.clicked.connect(lambda _checked, n=name: self._open_results(n))
-            self._view_btn_layout.addWidget(btn)
+            row, col = divmod(idx, COLS)
+            self._view_btn_layout.addWidget(btn, row, col)
 
     def _refresh(self) -> None:
         self._load_searches()
@@ -1110,6 +1125,11 @@ class ImotScraperMainWindow(QMainWindow):
 
     # ── Scraping ──────────────────────────────────────────────────────────────
 
+    def _on_search_progress(self, search_name: str) -> None:
+        """Update status label with the currently running search name."""
+        self._status_lbl.setText(f"  ⏳  Scraping: {search_name}")
+        self._status_lbl.setStyleSheet(f"color: {T.YELLOW}; font-size: 12px;")
+
     def start_scraping(self) -> None:
         if self._scheduler_running:
             QMessageBox.warning(
@@ -1132,8 +1152,7 @@ class ImotScraperMainWindow(QMainWindow):
         self._feed_table.clearContents()
         self._feed_table.setRowCount(0)
         self._feed_link_map.clear()
-        names = "  |  ".join(s["search_name"] for s in searches)
-        self._status_lbl.setText(f"  ⏳  Running: {names}")
+        self._status_lbl.setText(f"  ⏳  Starting scrape…")
         self._status_lbl.setStyleSheet(f"color: {T.YELLOW}; font-size: 12px;")
         self._status_counts_lbl.setText("")
 
@@ -1182,6 +1201,13 @@ class ImotScraperMainWindow(QMainWindow):
         self._run_btn.setText("▶  Run Scraping Now")
         self._refresh()
 
+    # ── Run history ───────────────────────────────────────────────────────────
+
+    def _open_run_history(self) -> None:
+        dlg = RunHistoryDialog(self, self.controller)
+        _set_dark_titlebar(dlg)
+        dlg.exec()
+
     # ── Window close ──────────────────────────────────────────────────────────
 
     def closeEvent(self, event) -> None:  # type: ignore[override]
@@ -1206,6 +1232,111 @@ class ImotScraperMainWindow(QMainWindow):
         self._update_sched_status("ERROR", T.BTN_RED)
         self._sched_btn.setText("Start Daily Schedule")
         self._sched_btn.setEnabled(True)
+
+
+# ── Run History dialog ────────────────────────────────────────────────────────
+
+class RunHistoryDialog(QDialog):
+    """
+    Shows all scrape_runs rows (newest first) in a table.
+    Failed runs are tinted red; the Error column shows the message inline.
+    """
+
+    _COLS = ["Date", "Search", "Found", "New", "Changed", "Inactive", "Status", "Error"]
+
+    def __init__(self, parent: QWidget, controller) -> None:
+        super().__init__(parent)
+        self.setWindowTitle("Run History")
+        self.setMinimumSize(900, 480)
+        _set_dark_titlebar(self)
+
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(10, 10, 10, 10)
+        layout.setSpacing(8)
+
+        self._table = QTableWidget(0, len(self._COLS))
+        self._table.setHorizontalHeaderLabels(self._COLS)
+        hdr = self._table.horizontalHeader()
+        hdr.setSectionResizeMode(0, QHeaderView.ResizeMode.Fixed)         # Date
+        hdr.setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)        # Search
+        hdr.setSectionResizeMode(2, QHeaderView.ResizeMode.Fixed)          # Found
+        hdr.setSectionResizeMode(3, QHeaderView.ResizeMode.Fixed)          # New
+        hdr.setSectionResizeMode(4, QHeaderView.ResizeMode.Fixed)          # Changed
+        hdr.setSectionResizeMode(5, QHeaderView.ResizeMode.Fixed)          # Inactive
+        hdr.setSectionResizeMode(6, QHeaderView.ResizeMode.Fixed)          # Status
+        hdr.setSectionResizeMode(7, QHeaderView.ResizeMode.Stretch)        # Error
+        self._table.setColumnWidth(0, 148)
+        self._table.setColumnWidth(2, 58)
+        self._table.setColumnWidth(3, 48)
+        self._table.setColumnWidth(4, 72)
+        self._table.setColumnWidth(5, 68)
+        self._table.setColumnWidth(6, 72)
+        self._table.verticalHeader().setVisible(False)
+        self._table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
+        self._table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
+        self._table.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        self._table.setAlternatingRowColors(False)
+        layout.addWidget(self._table, stretch=1)
+
+        btn_box = QDialogButtonBox(QDialogButtonBox.StandardButton.Close)
+        btn_box.rejected.connect(self.reject)
+        layout.addWidget(btn_box)
+
+        self._populate(controller)
+
+    def _populate(self, controller) -> None:
+        runs = controller.get_all_scrape_runs() if controller else []
+        self._table.setSortingEnabled(False)
+        self._table.setRowCount(len(runs))
+        for row, run in enumerate(runs):
+            failed = not bool(run.get("success", 1))
+            err    = run.get("error_message") or ""
+
+            row_bg = QColor(T.FEED_DELETED_BG) if failed else QColor(T.BG2)
+            row_fg = QColor(T.FG_WHITE)
+
+            # Format the run_date nicely (strip microseconds if present)
+            raw_date = run.get("run_date", "")
+            try:
+                date_str = raw_date[:16]   # "YYYY-MM-DD HH:MM"
+            except Exception:
+                date_str = str(raw_date)
+
+            values = [
+                date_str,
+                run.get("search_name", ""),
+                str(run.get("records_found", "")),
+                str(run.get("new_records", "")),
+                str(run.get("changed_prices", "")),
+                str(run.get("inactive_count", "")),
+                "FAILED" if failed else "OK",
+                err,
+            ]
+
+            for col, val in enumerate(values):
+                item = QTableWidgetItem(val)
+                item.setBackground(QBrush(row_bg))
+
+                # Error column: red text when there is an error message
+                if col == 7 and err:
+                    item.setForeground(QBrush(QColor(T.BTN_RED_H)))
+                elif col == 6 and failed:
+                    item.setForeground(QBrush(QColor(T.BTN_RED_H)))
+                else:
+                    item.setForeground(QBrush(row_fg))
+
+                # Right-align numeric columns
+                if col in (2, 3, 4, 5):
+                    item.setTextAlignment(
+                        Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignRight
+                    )
+                else:
+                    item.setTextAlignment(
+                        Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft
+                    )
+                self._table.setItem(row, col, item)
+
+        self._table.setSortingEnabled(True)
 
 
 # ── Entry point ───────────────────────────────────────────────────────────────
