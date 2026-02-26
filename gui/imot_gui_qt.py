@@ -167,12 +167,12 @@ class ResultsFeedHandler(logging.Handler):
     a FeedBridge signal (thread-safe — Qt handles cross-thread signals).
 
     Line formats:
-      "New listing: <title> | price: <price> | <link>"
-      "Price change: <title> <old> → <new>"
+      "New listing: <title> | price: <price> | search: <name> | <link>"
+      "Price change: <title> | from: <old> | to: <new> | search: <name>"
     """
 
     _RE_NEW        = re.compile(r"New listing: (.+?) \| price: (.+?) \| search: (.+?) \| (https?://\S+)")
-    _RE_CHANGED    = re.compile(r"Price change: (.+?) (\S+) → (\S+) \| search: (.+)")
+    _RE_CHANGED    = re.compile(r"Price change: (.+?) \| from: (.+?) \| to: (.+?) \| search: (.+)")
     _RE_PROCESSING = re.compile(r"Processing: (.+)")
 
     def __init__(self, bridge: FeedBridge) -> None:
@@ -876,6 +876,7 @@ class ImotScraperMainWindow(QMainWindow):
     # ── Search CRUD ───────────────────────────────────────────────────────────
 
     def show_search_dialog(self, action: str = "create", **kwargs) -> None:
+        old_name = kwargs.pop("_old_name", None)   # consumed here, not passed to SearchDialog
         dlg = SearchDialog(self, action=action, **kwargs)
         _set_dark_titlebar(dlg)
         if dlg.exec() != QDialog.DialogCode.Accepted:
@@ -902,8 +903,8 @@ class ImotScraperMainWindow(QMainWindow):
             self.controller.add_search(search_name, url, email_str)
             logging.info(f"Added new search: {search_name}")
         else:
-            old_name = kwargs.get("_old_name", search_name)
-            search_id = self._search_ids.get(old_name)
+            resolved_name = old_name if old_name is not None else search_name
+            search_id = self._search_ids.get(resolved_name)
             if search_id is not None:
                 self.controller.update_search(search_id, search_name, url, email_str)
                 logging.info(f"Updated search: {search_name}")

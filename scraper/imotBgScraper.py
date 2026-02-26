@@ -108,7 +108,7 @@ class ImotScraper:
                         image_urls  = None   # no re-fetch; images already stored
                         is_new = False
                         changed_count += 1
-                        self.logger.info(f"Price change: {title} {existing_price} → {price_text} | search: {search_name}")
+                        self.logger.info(f"Price change: {title} | from: {existing_price} | to: {price_text} | search: {search_name}")
                     else:
                         # Unchanged — skip detail fetch and DB write entirely
                         continue
