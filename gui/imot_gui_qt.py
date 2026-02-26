@@ -560,7 +560,10 @@ class ResultsWindow(QDialog):
         self._table.setColumnWidth(5, 130)
         self._table.setColumnWidth(6, 60)
 
-        self._populate(properties, controller)
+        self._populate(
+            sorted(properties, key=lambda p: (0 if p["status"] == "Active" else 1)),
+            controller,
+        )
         layout.addWidget(self._table)
 
         # Summary bar
