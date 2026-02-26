@@ -35,6 +35,12 @@ class DatabaseManager:
     # Internal helpers
     # ------------------------------------------------------------------
 
+    @staticmethod
+    def _local_now() -> str:
+        """Return the current local wall-clock time as 'YYYY-MM-DD HH:MM:SS'.
+        Used everywhere instead of SQLite's CURRENT_TIMESTAMP (which is UTC)."""
+        return datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
     def _get_connection(self) -> sqlite3.Connection:
         """Return a thread-local SQLite connection, creating it if needed."""
         if not getattr(self._local, "conn", None):
@@ -60,16 +66,17 @@ class DatabaseManager:
                 );
 
                 CREATE TABLE IF NOT EXISTS properties (
-                    id          INTEGER PRIMARY KEY AUTOINCREMENT,
-                    record_id   TEXT    NOT NULL,
-                    search_id   INTEGER NOT NULL REFERENCES searches(id) ON DELETE CASCADE,
-                    title       TEXT,
-                    location    TEXT,
-                    description TEXT,
-                    link        TEXT,
-                    status      TEXT    NOT NULL DEFAULT 'Active',
-                    first_seen  DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-                    last_seen   DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    id             INTEGER PRIMARY KEY AUTOINCREMENT,
+                    record_id      TEXT    NOT NULL,
+                    search_id      INTEGER NOT NULL REFERENCES searches(id) ON DELETE CASCADE,
+                    title          TEXT,
+                    location       TEXT,
+                    description    TEXT,
+                    link           TEXT,
+                    status         TEXT    NOT NULL DEFAULT 'Active',
+                    first_seen     DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    last_seen      DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    inactivated_at DATETIME,
                     UNIQUE (record_id, search_id)
                 );
 
@@ -213,6 +220,13 @@ class DatabaseManager:
 
             logger.info("Migration 3 complete.")
 
+        # ── Migration 4: add inactivated_at column to properties ─────────────
+        prop_cols = [r[1] for r in conn.execute("PRAGMA table_info(properties)").fetchall()]
+        if "inactivated_at" not in prop_cols:
+            logger.info("Migrating properties: adding inactivated_at column...")
+            conn.execute("ALTER TABLE properties ADD COLUMN inactivated_at DATETIME")
+            logger.info("Migration 4 complete.")
+
     def _recalculate_price_statuses(self, conn: sqlite3.Connection):
         """
         After a migration, set price_status correctly for all rows:
@@ -259,18 +273,20 @@ class DatabaseManager:
         """
         with self._get_connection() as conn:
             cursor = conn.cursor()
+            now = self._local_now()
 
             cursor.execute("""
-                INSERT INTO properties (record_id, search_id, title, location, description, link, status, last_seen)
-                VALUES (?, ?, ?, ?, ?, ?, 'Active', CURRENT_TIMESTAMP)
+                INSERT INTO properties (record_id, search_id, title, location, description, link, status, first_seen, last_seen)
+                VALUES (?, ?, ?, ?, ?, ?, 'Active', ?, ?)
                 ON CONFLICT(record_id, search_id) DO UPDATE SET
-                    title       = excluded.title,
-                    location    = excluded.location,
-                    description = COALESCE(excluded.description, properties.description),
-                    link        = excluded.link,
-                    status      = 'Active',
-                    last_seen   = CURRENT_TIMESTAMP
-            """, (record_id, search_id, title, location, description, link))
+                    title          = excluded.title,
+                    location       = excluded.location,
+                    description    = COALESCE(excluded.description, properties.description),
+                    link           = excluded.link,
+                    status         = 'Active',
+                    last_seen      = excluded.last_seen,
+                    inactivated_at = NULL
+            """, (record_id, search_id, title, location, description, link, now, now))
 
             cursor.execute(
                 "SELECT id FROM properties WHERE record_id = ? AND search_id = ?",
@@ -288,9 +304,9 @@ class DatabaseManager:
                     WHERE property_id = ? AND price_status = 'Current'
                 """, (property_id,))
                 cursor.execute("""
-                    INSERT INTO price_history (property_id, price, price_status, is_new)
-                    VALUES (?, ?, 'Current', ?)
-                """, (property_id, price, 1 if is_new else 0))
+                    INSERT INTO price_history (property_id, price, price_status, is_new, recorded_at)
+                    VALUES (?, ?, 'Current', ?, ?)
+                """, (property_id, price, 1 if is_new else 0, now))
 
             return property_id
 
@@ -377,24 +393,25 @@ class DatabaseManager:
         """
         with self._get_connection() as conn:
             cursor = conn.cursor()
+            now = self._local_now()
             if active_record_ids:
                 placeholders = ",".join("?" * len(active_record_ids))
                 cursor.execute(f"""
                     UPDATE properties
-                    SET    status    = 'Inactive',
-                           last_seen = CURRENT_TIMESTAMP
+                    SET    status         = 'Inactive',
+                           inactivated_at = ?
                     WHERE  search_id = ?
                       AND  status    = 'Active'
                       AND  record_id NOT IN ({placeholders})
-                """, [search_id] + active_record_ids)
+                """, [now, search_id] + active_record_ids)
             else:
                 cursor.execute("""
                     UPDATE properties
-                    SET    status    = 'Inactive',
-                           last_seen = CURRENT_TIMESTAMP
+                    SET    status         = 'Inactive',
+                           inactivated_at = ?
                     WHERE  search_id = ?
                       AND  status    = 'Active'
-                """, (search_id,))
+                """, (now, search_id))
             count = cursor.rowcount
             if count:
                 logger.info(f"Marked {count} propert{'y' if count == 1 else 'ies'} as Inactive for search_id={search_id}")
@@ -415,11 +432,11 @@ class DatabaseManager:
         with self._get_connection() as conn:
             conn.execute("""
                 INSERT INTO scrape_runs
-                    (search_id, search_name, records_found, new_records, changed_prices,
+                    (search_id, search_name, run_date, records_found, new_records, changed_prices,
                      inactive_count, success, error_message)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-            """, (search_id, search_name, records_found, new_records, changed_prices,
-                  inactive_count, 1 if success else 0, error_message))
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """, (search_id, search_name, self._local_now(), records_found, new_records,
+                  changed_prices, inactive_count, 1 if success else 0, error_message))
 
     # ------------------------------------------------------------------
     # Read operations

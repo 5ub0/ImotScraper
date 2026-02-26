@@ -537,7 +537,7 @@ class ResultsWindow(QDialog):
 
         # Table
         cols = ["Status", "Title", "Location", "Price",
-                "First Seen", "Last Seen", "Images", "Link"]
+                "First Seen", "Last Seen", "Inactive At", "Images", "Link"]
         self._table = QTableWidget(0, len(cols))
         self._table.setHorizontalHeaderLabels(cols)
         self._table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Interactive)
@@ -558,7 +558,8 @@ class ResultsWindow(QDialog):
         self._table.setColumnWidth(3, 130)
         self._table.setColumnWidth(4, 130)
         self._table.setColumnWidth(5, 130)
-        self._table.setColumnWidth(6, 60)
+        self._table.setColumnWidth(6, 130)
+        self._table.setColumnWidth(7, 60)
 
         self._populate(
             sorted(properties, key=lambda p: (0 if p["status"] == "Active" else 1)),
@@ -603,6 +604,7 @@ class ResultsWindow(QDialog):
                 current_price,
                 prop["first_seen"][:16] if prop.get("first_seen") else "—",
                 prop["last_seen"][:16]  if prop.get("last_seen")  else "—",
+                prop["inactivated_at"][:16] if prop.get("inactivated_at") else "—",
                 img_label,
                 prop.get("link") or "—",
             ]
@@ -623,7 +625,7 @@ class ResultsWindow(QDialog):
                 item.setFont(row_font)
                 item.setTextAlignment(
                     Qt.AlignmentFlag.AlignCenter | Qt.AlignmentFlag.AlignVCenter
-                    if col in (0, 4, 5, 6)
+                    if col in (0, 4, 5, 6, 7)
                     else Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft
                 )
                 # Store enriched prop on the Status cell (col 0) for retrieval
@@ -636,7 +638,7 @@ class ResultsWindow(QDialog):
 
     def _on_click(self, row: int, col: int) -> None:
         """Single click on Link column opens URL in browser."""
-        if col == 7:
+        if col == 8:
             link = self._table.item(row, col)
             if link and link.text() != "—":
                 webbrowser.open(link.text())
