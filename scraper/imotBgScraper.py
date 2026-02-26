@@ -87,6 +87,7 @@ class ImotScraper:
                         continue
 
                     list_title, price_text, link, record_id = result
+                    price_per_sqm = self._extract_price_per_sqm(listing)
                     records_found += 1
                     active_record_ids.append(record_id)
 
@@ -110,7 +111,10 @@ class ImotScraper:
                         changed_count += 1
                         self.logger.info(f"Price change: {title} {existing_price} → {price_text} | search: {search_name}")
                     else:
-                        # Unchanged — skip detail fetch and DB write entirely
+                        # Unchanged — skip detail fetch and DB write entirely,
+                        # but backfill price_per_sqm if the existing row lacks it.
+                        if price_per_sqm:
+                            self.db.backfill_price_per_sqm(record_id, search_id, price_per_sqm)
                         continue
 
                     property_id = self.db.upsert_property(
@@ -122,6 +126,7 @@ class ImotScraper:
                         link=link,
                         price=price_text,
                         is_new=is_new,
+                        price_per_sqm=price_per_sqm,
                     )
 
                     # Store images only for new listings (detail page already fetched)
@@ -135,6 +140,9 @@ class ImotScraper:
 
             # Mark anything not seen this run as Inactive
             inactive_count = self.db.mark_inactive(search_id, active_record_ids)
+
+            # Record area avg snapshot for this search after the run
+            self.db.record_area_stats_snapshot(search_id)
 
             self.db.log_scrape_run(
                 search_id=search_id,
@@ -249,6 +257,29 @@ class ImotScraper:
             return title, price_text, link_element, record_id_key
         except Exception as e:
             self.logger.error(f"Error processing listing: {e}")
+            return None
+
+    def _extract_price_per_sqm(self, listing: BeautifulSoup) -> Optional[str]:
+        """
+        Extract the price-per-square-metre value from a listing card.
+        The HTML looks like:  <span>(10.43 €, 20.40 лв./m<sup>2</sup>)</span>
+        Returns e.g. "10.43 €/m²" or None if not present.
+        """
+        import re
+        try:
+            price_div = listing.find("div", class_=lambda x: x and x.startswith('price'))
+            if not price_div:
+                return None
+            # Find the span that contains "/m" (price per m²)
+            for span in price_div.find_all("span"):
+                text = span.get_text(" ", strip=True)
+                # Matches "(10.43 €, 20.40 лв./m2)" or "(10.43 €, ...)" formats
+                m = re.search(r'\((\d[\d\s,.]*)\s*[€$£]', text)
+                if m and "/m" in text:
+                    value = m.group(1).strip().replace(" ", "").replace(",", ".")
+                    return f"{value} €/m²"
+            return None
+        except Exception:
             return None
 
     def _fetch_detail(self, session: requests.Session, url: str) -> Optional[BeautifulSoup]:

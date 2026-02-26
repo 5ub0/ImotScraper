@@ -522,21 +522,24 @@ class ResultsWindow(QDialog):
     """Shows all properties for a saved search in a sortable table."""
 
     def __init__(self, parent: QWidget, search_name: str,
-                 properties: list[dict], controller) -> None:
+                 properties: list[dict], controller,
+                 search_id: int | None = None) -> None:
         super().__init__(parent)
         self.setWindowTitle(f"Results — {search_name}")
-        self.resize(1200, 620)
+        self.resize(1300, 620)
         self.setMinimumSize(900, 400)
         _set_dark_titlebar(self)
 
-        self._controller = controller
+        self._controller  = controller
+        self._search_id   = search_id
+        self._search_name = search_name
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(8, 8, 8, 8)
         layout.setSpacing(6)
 
         # Table
-        cols = ["Status", "Title", "Location", "Price",
+        cols = ["Status", "Title", "Location", "Price", "€/m²",
                 "First Seen", "Last Seen", "Inactive At", "Images", "Link"]
         self._table = QTableWidget(0, len(cols))
         self._table.setHorizontalHeaderLabels(cols)
@@ -551,15 +554,24 @@ class ResultsWindow(QDialog):
         self._table.setSortingEnabled(False)   # enabled AFTER populate to avoid row scrambling
         self._table.setShowGrid(True)
 
-        # Column widths
+        # Column widths (0=Status, 1=Title, 2=Location, 3=Price, 4=€/m², 5=First Seen,
+        #                6=Last Seen, 7=Inactive At, 8=Images, 9=Link)
         self._table.setColumnWidth(0, 80)
         self._table.setColumnWidth(1, 220)
         self._table.setColumnWidth(2, 180)
         self._table.setColumnWidth(3, 130)
-        self._table.setColumnWidth(4, 130)
+        self._table.setColumnWidth(4, 90)
         self._table.setColumnWidth(5, 130)
         self._table.setColumnWidth(6, 130)
-        self._table.setColumnWidth(7, 60)
+        self._table.setColumnWidth(7, 130)
+        self._table.setColumnWidth(8, 60)
+
+        # Fetch latest area avg for underpriced highlighting
+        self._area_avg: float | None = None
+        if controller and search_id is not None:
+            history = controller.get_area_stats_history(search_id, limit=1)
+            if history:
+                self._area_avg = history[-1].get("avg_price_per_sqm")
 
         self._populate(
             sorted(properties, key=lambda p: (0 if p["status"] == "Active" else 1)),
@@ -570,11 +582,22 @@ class ResultsWindow(QDialog):
         # Summary bar
         active   = sum(1 for p in properties if p["status"] == "Active")
         inactive = len(properties) - active
+        avg_txt  = f"  |  Area avg: {self._area_avg:.2f} €/m²" if self._area_avg else ""
         summary_lbl = _dim_label(
             f"Total: {len(properties)}  |  Active: {active}  |  "
-            f"Inactive: {inactive}  |  Double-click a row to view gallery"
+            f"Inactive: {inactive}{avg_txt}  |  Double-click a row to view gallery"
         )
-        layout.addWidget(summary_lbl)
+
+        summary_bar = QHBoxLayout()
+        summary_bar.addWidget(summary_lbl, stretch=1)
+
+        if search_id is not None:
+            chart_btn = make_button(self, text="📊 Area Avg Chart",
+                                    callback=self._open_area_chart)
+            chart_btn.setFixedWidth(150)
+            summary_bar.addWidget(chart_btn)
+
+        layout.addLayout(summary_bar)
 
         self._table.cellDoubleClicked.connect(self._on_double_click)
         self._table.cellClicked.connect(self._on_click)
@@ -597,11 +620,14 @@ class ResultsWindow(QDialog):
             self._table.insertRow(row_idx)
             self._table.setRowHeight(row_idx, T.ROW_H)
 
+            sqm_val   = prop.get("price_per_sqm") or "—"
+
             cells = [
                 prop["status"],
                 prop.get("title") or "—",
                 prop.get("location") or "—",
                 current_price,
+                sqm_val,
                 prop["first_seen"][:16] if prop.get("first_seen") else "—",
                 prop["last_seen"][:16]  if prop.get("last_seen")  else "—",
                 prop["inactivated_at"][:16] if prop.get("inactivated_at") else "—",
@@ -610,11 +636,26 @@ class ResultsWindow(QDialog):
             ]
 
             is_active = (prop["status"] == "Active")
-            # Active rows = slightly lighter panel; Inactive = main bg
-            row_bg    = QColor(T.BG2) if is_active else QColor(T.BG)
-            # Active = normal weight white; Inactive = dimmed
-            text_fg   = QColor(T.FG_WHITE) if is_active else QColor(T.FG_DIM)
-            row_font  = QFont(T.FONT_FAMILY, T.FONT_SIZE)
+
+            # Determine if this row is underpriced (active only; needs numeric sqm)
+            is_underpriced = False
+            if is_active and self._area_avg and sqm_val != "—":
+                try:
+                    sqm_float = float(sqm_val.split()[0].replace(",", "."))
+                    is_underpriced = sqm_float < self._area_avg * 0.9
+                except (ValueError, IndexError):
+                    pass
+
+            # Active rows = slightly lighter panel; Inactive = main bg; underpriced = teal tint
+            if is_underpriced:
+                row_bg = QColor(T.FEED_UNDERPRICED_BG)
+            elif is_active:
+                row_bg = QColor(T.BG2)
+            else:
+                row_bg = QColor(T.BG)
+
+            text_fg  = QColor(T.FG_WHITE) if is_active else QColor(T.FG_DIM)
+            row_font = QFont(T.FONT_FAMILY, T.FONT_SIZE)
             if not is_active:
                 row_font.setItalic(True)
 
@@ -625,7 +666,7 @@ class ResultsWindow(QDialog):
                 item.setFont(row_font)
                 item.setTextAlignment(
                     Qt.AlignmentFlag.AlignCenter | Qt.AlignmentFlag.AlignVCenter
-                    if col in (0, 4, 5, 6, 7)
+                    if col in (0, 4, 5, 6, 7, 8)
                     else Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft
                 )
                 # Store enriched prop on the Status cell (col 0) for retrieval
@@ -638,7 +679,7 @@ class ResultsWindow(QDialog):
 
     def _on_click(self, row: int, col: int) -> None:
         """Single click on Link column opens URL in browser."""
-        if col == 8:
+        if col == 9:
             link = self._table.item(row, col)
             if link and link.text() != "—":
                 webbrowser.open(link.text())
@@ -651,6 +692,88 @@ class ResultsWindow(QDialog):
             if prop:
                 gw = GalleryWindow(self, prop, self._controller)
                 gw.exec()
+
+    def _open_area_chart(self) -> None:
+        """Open the Area Average Price chart for this search."""
+        dlg = AreaAvgChartDialog(self, self._search_name, self._search_id, self._controller)
+        dlg.exec()
+
+
+# ── Area Average Price Chart ───────────────────────────────────────────────────
+
+class AreaAvgChartDialog(QDialog):
+    """Line chart of the daily area-average price-per-m² snapshots for a search."""
+
+    def __init__(self, parent: QWidget, search_name: str,
+                 search_id: int | None, controller) -> None:
+        super().__init__(parent)
+        self.setWindowTitle(f"Area Avg Price/m² — {search_name}")
+        self.resize(800, 480)
+        self.setMinimumSize(500, 320)
+        _set_dark_titlebar(self)
+
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(8, 8, 8, 8)
+
+        history = []
+        if controller and search_id is not None:
+            history = controller.get_area_stats_history(search_id, limit=365)
+
+        if not history:
+            layout.addWidget(_dim_label("No area average data yet. Run a scrape first."))
+            return
+
+        try:
+            from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg
+            from matplotlib.figure import Figure
+            import matplotlib.dates as mdates
+            from datetime import datetime
+
+            dates  = [datetime.strptime(r["snapshot_date"][:16], "%Y-%m-%d %H:%M")
+                      for r in history]
+            values = [r["avg_price_per_sqm"] for r in history]
+            counts = [r["sample_count"]       for r in history]
+
+            fig = Figure(figsize=(8, 4), tight_layout=True,
+                         facecolor="#1e1e1e")
+            ax  = fig.add_subplot(111)
+            ax.set_facecolor("#2b2b2b")
+
+            ax.plot(dates, values, color="#0d7aff", linewidth=2, marker="o",
+                    markersize=4, label="Avg €/m²")
+
+            # Shade ±10 % band around the latest avg
+            if values:
+                last_avg = values[-1]
+                ax.axhline(last_avg, color="#4caf50", linestyle="--", linewidth=1,
+                           alpha=0.7, label=f"Latest: {last_avg:.2f} €/m²")
+                ax.axhspan(last_avg * 0.9, last_avg * 1.1, alpha=0.07,
+                           color="#4caf50", label="±10 % band")
+
+            # Annotate last point
+            ax.annotate(f"{values[-1]:.2f}\n(n={counts[-1]})",
+                        xy=(dates[-1], values[-1]),
+                        xytext=(10, 6), textcoords="offset points",
+                        color="#ffffff", fontsize=8)
+
+            # Formatting
+            ax.xaxis.set_major_formatter(mdates.DateFormatter("%d %b"))
+            ax.xaxis.set_major_locator(mdates.AutoDateLocator())
+            fig.autofmt_xdate(rotation=30)
+            ax.set_ylabel("€/m²", color="#e8e8e8")
+            ax.set_xlabel("Date", color="#e8e8e8")
+            ax.tick_params(colors="#888888")
+            ax.spines[:].set_color("#333333")
+            ax.legend(facecolor="#2b2b2b", labelcolor="#e8e8e8",
+                      framealpha=0.8, fontsize=8)
+
+            canvas = FigureCanvasQTAgg(fig)
+            layout.addWidget(canvas)
+
+        except ImportError:
+            layout.addWidget(_dim_label(
+                "matplotlib is not installed. Run:  pip install matplotlib"
+            ))
 
 
 # ── Main window ────────────────────────────────────────────────────────────────
@@ -974,7 +1097,8 @@ class ImotScraperMainWindow(QMainWindow):
             self.controller.get_properties_for_search(search_name)
             if self.controller else []
         )
-        win = ResultsWindow(self, search_name, props, self.controller)
+        search_id = self._search_ids.get(search_name)
+        win = ResultsWindow(self, search_name, props, self.controller, search_id=search_id)
         win.exec()
 
     def _open_gallery(self, prop: dict) -> None:

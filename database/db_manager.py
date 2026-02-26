@@ -77,7 +77,16 @@ class DatabaseManager:
                     first_seen     DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
                     last_seen      DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
                     inactivated_at DATETIME,
+                    price_per_sqm  TEXT,
                     UNIQUE (record_id, search_id)
+                );
+
+                CREATE TABLE IF NOT EXISTS search_area_stats (
+                    id               INTEGER PRIMARY KEY AUTOINCREMENT,
+                    search_id        INTEGER NOT NULL REFERENCES searches(id) ON DELETE CASCADE,
+                    snapshot_date    DATETIME NOT NULL,
+                    avg_price_per_sqm REAL    NOT NULL,
+                    sample_count     INTEGER  NOT NULL DEFAULT 0
                 );
 
                 CREATE TABLE IF NOT EXISTS price_history (
@@ -227,6 +236,28 @@ class DatabaseManager:
             conn.execute("ALTER TABLE properties ADD COLUMN inactivated_at DATETIME")
             logger.info("Migration 4 complete.")
 
+        # ── Migration 5: add price_per_sqm column to properties ──────────────
+        prop_cols = [r[1] for r in conn.execute("PRAGMA table_info(properties)").fetchall()]
+        if "price_per_sqm" not in prop_cols:
+            logger.info("Migrating properties: adding price_per_sqm column...")
+            conn.execute("ALTER TABLE properties ADD COLUMN price_per_sqm TEXT")
+            logger.info("Migration 5 complete.")
+
+        # ── Migration 6: create search_area_stats table ───────────────────────
+        tables = {r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type='table'").fetchall()}
+        if "search_area_stats" not in tables:
+            logger.info("Migrating: creating search_area_stats table...")
+            conn.execute("""
+                CREATE TABLE search_area_stats (
+                    id                INTEGER PRIMARY KEY AUTOINCREMENT,
+                    search_id         INTEGER NOT NULL REFERENCES searches(id) ON DELETE CASCADE,
+                    snapshot_date     DATETIME NOT NULL,
+                    avg_price_per_sqm REAL     NOT NULL,
+                    sample_count      INTEGER  NOT NULL DEFAULT 0
+                )
+            """)
+            logger.info("Migration 6 complete.")
+
     def _recalculate_price_statuses(self, conn: sqlite3.Connection):
         """
         After a migration, set price_status correctly for all rows:
@@ -263,12 +294,14 @@ class DatabaseManager:
         link: str,
         price: str,
         is_new: bool,
+        price_per_sqm: Optional[str] = None,
     ) -> int:
         """
         Insert a new property or update an existing one.
         Records a price_history row ONLY when the property is new or the price changed.
         Description is stored on first fetch and never overwritten (changes are rare
         and the detail page is only fetched for new listings).
+        price_per_sqm is always updated when provided (e.g. "10.43 €/m²").
         Returns the property id.
         """
         with self._get_connection() as conn:
@@ -276,8 +309,8 @@ class DatabaseManager:
             now = self._local_now()
 
             cursor.execute("""
-                INSERT INTO properties (record_id, search_id, title, location, description, link, status, first_seen, last_seen)
-                VALUES (?, ?, ?, ?, ?, ?, 'Active', ?, ?)
+                INSERT INTO properties (record_id, search_id, title, location, description, link, status, first_seen, last_seen, price_per_sqm)
+                VALUES (?, ?, ?, ?, ?, ?, 'Active', ?, ?, ?)
                 ON CONFLICT(record_id, search_id) DO UPDATE SET
                     title          = excluded.title,
                     location       = excluded.location,
@@ -285,8 +318,9 @@ class DatabaseManager:
                     link           = excluded.link,
                     status         = 'Active',
                     last_seen      = excluded.last_seen,
-                    inactivated_at = NULL
-            """, (record_id, search_id, title, location, description, link, now, now))
+                    inactivated_at = NULL,
+                    price_per_sqm  = COALESCE(excluded.price_per_sqm, properties.price_per_sqm)
+            """, (record_id, search_id, title, location, description, link, now, now, price_per_sqm))
 
             cursor.execute(
                 "SELECT id FROM properties WHERE record_id = ? AND search_id = ?",
@@ -548,6 +582,73 @@ class DatabaseManager:
             rows = conn.execute(
                 "SELECT * FROM scrape_runs ORDER BY run_date DESC LIMIT ?",
                 (limit,)
+            ).fetchall()
+            return [dict(r) for r in rows]
+
+    def backfill_price_per_sqm(self, record_id: str, search_id: int,
+                                price_per_sqm: str) -> None:
+        """
+        Set price_per_sqm on an existing row ONLY when the column is currently
+        NULL.  Called for unchanged listings so existing rows get backfilled on
+        the next scrape run without triggering a full upsert.
+        """
+        with self._get_connection() as conn:
+            conn.execute(
+                """
+                UPDATE properties
+                SET    price_per_sqm = ?
+                WHERE  record_id = ? AND search_id = ?
+                  AND  (price_per_sqm IS NULL OR price_per_sqm = '')
+                """,
+                (price_per_sqm, record_id, search_id),
+            )
+
+    def record_area_stats_snapshot(self, search_id: int) -> Optional[float]:
+        """
+        Compute the average price_per_sqm (numeric EUR value) across all
+        *Active* properties in this search that have a price_per_sqm stored,
+        insert a snapshot row into search_area_stats, and return the average.
+        Returns None if no numeric values are available.
+        """
+        with self._get_connection() as conn:
+            rows = conn.execute(
+                """SELECT price_per_sqm FROM properties
+                   WHERE search_id = ? AND status = 'Active' AND price_per_sqm IS NOT NULL""",
+                (search_id,)
+            ).fetchall()
+
+        values: List[float] = []
+        for row in rows:
+            raw = row["price_per_sqm"]
+            try:
+                # stored as "10.43 €/m²" — extract the leading float
+                numeric = float(raw.split()[0].replace(",", "."))
+                values.append(numeric)
+            except (ValueError, AttributeError, IndexError):
+                pass
+
+        if not values:
+            return None
+
+        avg = round(sum(values) / len(values), 2)
+        with self._get_connection() as conn:
+            conn.execute(
+                """INSERT INTO search_area_stats (search_id, snapshot_date, avg_price_per_sqm, sample_count)
+                   VALUES (?, ?, ?, ?)""",
+                (search_id, self._local_now(), avg, len(values))
+            )
+        return avg
+
+    def get_area_stats_history(self, search_id: int, limit: int = 365) -> List[Dict]:
+        """Return avg price/m² snapshots for a search, oldest first (for charting)."""
+        with self._get_connection() as conn:
+            rows = conn.execute(
+                """SELECT snapshot_date, avg_price_per_sqm, sample_count
+                   FROM search_area_stats
+                   WHERE search_id = ?
+                   ORDER BY snapshot_date ASC
+                   LIMIT ?""",
+                (search_id, limit)
             ).fetchall()
             return [dict(r) for r in rows]
 

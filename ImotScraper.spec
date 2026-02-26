@@ -32,6 +32,12 @@ a = Analysis(
         'PIL',
         'PIL.Image',
         'PIL.ImageQt',
+        # matplotlib
+        'matplotlib',
+        'matplotlib.figure',
+        'matplotlib.pyplot',
+        'matplotlib.backends.backend_qtagg',
+        'matplotlib.dates',
         # project packages
         'controller',
         'controller.app_controller',

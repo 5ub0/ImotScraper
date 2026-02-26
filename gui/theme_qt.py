@@ -49,9 +49,10 @@ class AppTheme:
     BTN_DEFAULT_H = "#4a4a4a"
 
     # ── Feed row backgrounds ──────────────────────────────────────────────────
-    FEED_NEW_BG     = "#1e5c1a"   # new listing      — dark green, visible on dark bg
-    FEED_CHANGED_BG = "#5c4a00"   # price change     — dark amber
-    FEED_DELETED_BG = "#5c1a1a"   # inactive         — dark red
+    FEED_NEW_BG         = "#1e5c1a"   # new listing      — dark green, visible on dark bg
+    FEED_CHANGED_BG     = "#5c4a00"   # price change     — dark amber
+    FEED_DELETED_BG     = "#5c1a1a"   # inactive         — dark red
+    FEED_UNDERPRICED_BG = "#1a3a3a"   # below area avg   — dark teal/cyan
 
     # ── Typography ────────────────────────────────────────────────────────────
     FONT_FAMILY = "Segoe UI"

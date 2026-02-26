@@ -143,3 +143,7 @@ class AppController:
     def get_all_scrape_runs(self, limit: int = 200):
         """Return recent scrape run rows across all searches, newest first."""
         return self.db.get_all_scrape_runs(limit) if self.db else []
+
+    def get_area_stats_history(self, search_id: int, limit: int = 365):
+        """Return area avg price snapshots for a search, oldest first."""
+        return self.db.get_area_stats_history(search_id, limit) if self.db else []
