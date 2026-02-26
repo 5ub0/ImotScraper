@@ -5,6 +5,7 @@ This module is self-contained and does not depend on GUI or email components.
 
 import requests
 from bs4 import BeautifulSoup
+import re
 import os.path
 from typing import List, Tuple, Dict, Optional
 from requests.adapters import HTTPAdapter
@@ -236,24 +237,37 @@ class ImotScraper:
     def _extract_price_per_sqm(self, listing: BeautifulSoup) -> Optional[str]:
         """
         Extract the price-per-square-metre value from a listing card.
-        The HTML looks like:  <span>(10.43 €, 20.40 лв./m<sup>2</sup>)</span>
-        Returns e.g. "10.43 €/m²" or None if not present.
+        The HTML looks like:
+          <span>(1 686 €, 3 297.53 лв./m<sup>2</sup>)</span>
+        Returns e.g. "1686 €/m²" or None if not present.
         """
-        import re
         try:
             price_div = listing.find("div", class_=lambda x: x and x.startswith('price'))
             if not price_div:
                 return None
-            # Find the span that contains "/m" (price per m²)
-            for span in price_div.find_all("span"):
+
+            # Only look at DIRECT span children of the price div to avoid
+            # descending into the priceHistory / stat nested elements.
+            for span in price_div.find_all("span", recursive=False):
+                # get_text with separator produces e.g. "(1 686 €, 3 297.53 лв./m 2 )"
                 text = span.get_text(" ", strip=True)
-                # Matches "(10.43 €, 20.40 лв./m2)" or "(10.43 €, ...)" formats
-                m = re.search(r'\((\d[\d\s,.]*)\s*[€$£]', text)
-                if m and "/m" in text:
-                    value = m.group(1).strip().replace(" ", "").replace(",", ".")
+                # Must contain "/m" (handles both "/m2" and "/m 2" after get_text)
+                if "/m" not in text:
+                    continue
+                # Capture the EUR figure: digits, spaces, dots, commas up to the € sign
+                m = re.search(r'\(\s*(\d[\d\s.]*(?:,\d+)?)\s*€', text)
+                if m:
+                    raw = m.group(1).strip()
+                    # Normalise: remove thousands-space, keep decimal dot
+                    # e.g. "1 686" → "1686", "10.43" → "10.43"
+                    value = raw.replace(" ", "").replace(",", ".")
+                    self.logger.debug(f"price/m² extracted: {value} from span text: {repr(text)}")
                     return f"{value} €/m²"
+
+            self.logger.debug(f"price/m² not found in price div: {repr(price_div.get_text(' ', strip=True)[:80])}")
             return None
-        except Exception:
+        except Exception as e:
+            self.logger.debug(f"price/m² extraction error: {e}")
             return None
 
     def _fetch_detail(self, session: requests.Session, url: str) -> Optional[BeautifulSoup]:
