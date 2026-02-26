@@ -5,7 +5,6 @@ This module is self-contained and does not depend on GUI or email components.
 
 import requests
 from bs4 import BeautifulSoup
-import csv
 import os.path
 from typing import List, Tuple, Dict, Optional
 from requests.adapters import HTTPAdapter
@@ -36,7 +35,7 @@ class ImotScraper:
         if not os.path.exists(self.config['DATA_DIR']):
             os.makedirs(self.config['DATA_DIR'])
 
-    def execute(self, input_csv: str = "data/inputURLS.csv") -> bool:
+    def execute(self) -> bool:
         """Execute the scraping job. Reads searches from DB, persists results to DB."""
         try:
             self.logger.info("Starting scraper execution - reading searches from database.")
@@ -204,31 +203,6 @@ class ImotScraper:
         session.mount('http://', HTTPAdapter(max_retries=retries))
         session.mount('https://', HTTPAdapter(max_retries=retries))
         return session
-
-    def _read_input_urls(self, file_path: str) -> List[Tuple[str, str]]:
-        """Read URLs and filenames from input CSV"""
-        urls = []
-        try:
-            self.logger.info(f"Reading input URLs from: {file_path}")
-            with open(file_path, "r", encoding="utf-8") as csvfile:
-                reader = csv.DictReader(csvfile)
-                if reader.fieldnames is None:
-                    self.logger.error(f"Input CSV file is empty: {file_path}")
-                    return urls
-                
-                urls = [(row["URL"], row["FileName"]) for row in reader if row.get("URL") and row.get("FileName")]
-            
-            self.logger.info(f"Successfully read {len(urls)} URLs from {file_path}")
-            return urls
-        except FileNotFoundError:
-            self.logger.error(f"Input CSV file not found: {file_path}")
-            return urls
-        except KeyError as e:
-            self.logger.error(f"CSV file missing required column {e}: {file_path}")
-            return urls
-        except Exception as e:
-            self.logger.error(f"Error reading input URLs: {str(e)}")
-            return urls
 
     def _extract_listing_data(self, listing: BeautifulSoup) -> Optional[Tuple[str, str, str, str]]:
         """Extract data from a listing card. Returns (title, price_text, link, record_id)."""

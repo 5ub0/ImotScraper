@@ -52,11 +52,6 @@ def main():
         # Initialize core components
         scraper = ImotScraper(data_dir=data_dir)
 
-        # One-time migration: import searches from inputURLS.csv if DB is empty
-        csv_path = os.path.join(data_dir, 'inputURLS.csv')
-        if not scraper.db.get_all_searches() and os.path.exists(csv_path):
-            migrated = scraper.db.migrate_from_csv(csv_path)
-            logging.info(f"Migrated {migrated} search(es) from inputURLS.csv into the database.")
         email_service = ReportMailer()
         scheduler = ScraperScheduler(
             report_mailer=email_service,

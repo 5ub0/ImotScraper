@@ -719,27 +719,3 @@ class DatabaseManager:
                          (search_id, search_name))
             conn.execute("DELETE FROM searches    WHERE id = ?",          (search_id,))
             logger.info(f"Deleted search '{search_name}' and all associated data.")
-
-    def migrate_from_csv(self, csv_path: str):
-        """
-        One-time migration: import searches from the legacy inputURLS.csv
-        into the searches table. Skips rows that already exist.
-        """
-        import csv as csv_module
-        if not os.path.exists(csv_path):
-            return
-        imported = 0
-        with open(csv_path, "r", encoding="utf-8") as f:
-            for row in csv_module.DictReader(f):
-                url         = row.get("URL", "").strip()
-                filename    = row.get("FileName", "").strip()
-                emails      = row.get("Send to Emails", "").strip()
-                search_name = filename.replace(".csv", "").strip()
-                if url and search_name:
-                    try:
-                        self.add_search(search_name, url, emails)
-                        imported += 1
-                    except ValueError:
-                        pass  # already exists – skip
-        if imported:
-            logger.info(f"Migrated {imported} search(es) from {csv_path} into the database.")
