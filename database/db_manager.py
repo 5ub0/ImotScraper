@@ -258,6 +258,17 @@ class DatabaseManager:
             """)
             logger.info("Migration 6 complete.")
 
+        # ── Migration 7: add avg_price_per_sqm + active_count to scrape_runs ─
+        sr_cols = [r[1] for r in conn.execute("PRAGMA table_info(scrape_runs)").fetchall()]
+        if "avg_price_per_sqm" not in sr_cols:
+            logger.info("Migrating scrape_runs: adding avg_price_per_sqm column...")
+            conn.execute("ALTER TABLE scrape_runs ADD COLUMN avg_price_per_sqm REAL")
+            logger.info("Migration 7 (avg_price_per_sqm) complete.")
+        if "active_count" not in sr_cols:
+            logger.info("Migrating scrape_runs: adding active_count column...")
+            conn.execute("ALTER TABLE scrape_runs ADD COLUMN active_count INTEGER")
+            logger.info("Migration 7 (active_count) complete.")
+
     def _recalculate_price_statuses(self, conn: sqlite3.Connection):
         """
         After a migration, set price_status correctly for all rows:
@@ -461,16 +472,19 @@ class DatabaseManager:
         inactive_count: int,
         success: bool,
         error_message: Optional[str] = None,
+        avg_price_per_sqm: Optional[float] = None,
+        active_count: Optional[int] = None,
     ):
         """Persist a summary row for one scrape run."""
         with self._get_connection() as conn:
             conn.execute("""
                 INSERT INTO scrape_runs
                     (search_id, search_name, run_date, records_found, new_records, changed_prices,
-                     inactive_count, success, error_message)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                     inactive_count, success, error_message, avg_price_per_sqm, active_count)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """, (search_id, search_name, self._local_now(), records_found, new_records,
-                  changed_prices, inactive_count, 1 if success else 0, error_message))
+                  changed_prices, inactive_count, 1 if success else 0, error_message,
+                  avg_price_per_sqm, active_count))
 
     # ------------------------------------------------------------------
     # Read operations
@@ -568,8 +582,8 @@ class DatabaseManager:
                 "changed": [dict(r) for r in changed_records],
             }
 
-    def get_scrape_history(self, search_id: int, limit: int = 10) -> List[Dict]:
-        """Return recent scrape run summaries."""
+    def get_scrape_history(self, search_id: int, limit: int = 365) -> List[Dict]:
+        """Return recent scrape run summaries, newest first."""
         with self._get_connection() as conn:
             rows = conn.execute(
                 "SELECT * FROM scrape_runs WHERE search_id = ? ORDER BY run_date DESC LIMIT ?",

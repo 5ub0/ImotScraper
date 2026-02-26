@@ -151,6 +151,19 @@ class ImotScraper:
             # Record area avg snapshot for this search after the run
             self.db.record_area_stats_snapshot(search_id)
 
+            # Compute avg €/m² and active count for this run (from in-memory known + upserted data)
+            active_props = self.db.get_properties(search_id, status="Active")
+            active_count = len(active_props)
+            sqm_values: list[float] = []
+            for p in active_props:
+                raw = p.get("price_per_sqm")
+                if raw:
+                    try:
+                        sqm_values.append(float(raw.split()[0].replace(",", ".")))
+                    except (ValueError, IndexError):
+                        pass
+            avg_sqm = round(sum(sqm_values) / len(sqm_values), 2) if sqm_values else None
+
             self.db.log_scrape_run(
                 search_id=search_id,
                 search_name=search_name,
@@ -159,6 +172,8 @@ class ImotScraper:
                 changed_prices=changed_count,
                 inactive_count=inactive_count,
                 success=True,
+                avg_price_per_sqm=avg_sqm,
+                active_count=active_count,
             )
 
             self.logger.info(
