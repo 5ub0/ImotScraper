@@ -5,7 +5,7 @@ This module is self-contained and does not depend on GUI or email components.
 
 import requests
 from bs4 import BeautifulSoup
-import csv
+import re
 import os.path
 from typing import List, Tuple, Dict, Optional
 from requests.adapters import HTTPAdapter
@@ -36,7 +36,7 @@ class ImotScraper:
         if not os.path.exists(self.config['DATA_DIR']):
             os.makedirs(self.config['DATA_DIR'])
 
-    def execute(self, input_csv: str = "data/inputURLS.csv") -> bool:
+    def execute(self) -> bool:
         """Execute the scraping job. Reads searches from DB, persists results to DB."""
         try:
             self.logger.info("Starting scraper execution - reading searches from database.")
@@ -93,8 +93,8 @@ class ImotScraper:
                     existing_price, existing_title, existing_location = known.get(record_id, (None, None, None))
 
                     if existing_price is None:
-                        # Brand new listing — fetch detail page for clean title, location, description, images
-                        title, location, description, image_urls = self._extract_title_and_location(session, link)
+                        # Brand new listing — fetch detail page for clean title, location, description, images, price/m²
+                        title, location, description, image_urls, price_per_sqm = self._extract_title_and_location(session, link)
                         if not title:
                             title = list_title
                         is_new = True
@@ -106,11 +106,13 @@ class ImotScraper:
                         location = existing_location or ""
                         description = None   # COALESCE keeps existing value in DB
                         image_urls  = None   # no re-fetch; images already stored
+                        # Re-fetch detail page only for the updated price/m²
+                        _, _, _, _, price_per_sqm = self._extract_title_and_location(session, link)
                         is_new = False
                         changed_count += 1
-                        self.logger.info(f"Price change: {title} {existing_price} → {price_text} | search: {search_name}")
+                        self.logger.info(f"Price change: {title} | old: {existing_price} | new: {price_text} | search: {search_name} | {link}")
                     else:
-                        # Unchanged — skip detail fetch and DB write entirely
+                        # Unchanged — skip detail fetch and DB write entirely.
                         continue
 
                     property_id = self.db.upsert_property(
@@ -122,6 +124,7 @@ class ImotScraper:
                         link=link,
                         price=price_text,
                         is_new=is_new,
+                        price_per_sqm=price_per_sqm,
                     )
 
                     # Store images only for new listings (detail page already fetched)
@@ -136,6 +139,31 @@ class ImotScraper:
             # Mark anything not seen this run as Inactive
             inactive_count = self.db.mark_inactive(search_id, active_record_ids)
 
+            # Emit a feed log line for each newly inactivated listing
+            active_set = set(active_record_ids)
+            for rid, (price, title, location) in known.items():
+                if rid not in active_set:
+                    link = self.db.get_link_for_record(rid, search_id)
+                    self.logger.info(
+                        f"Removed listing: {title or rid} | search: {search_name} | {link or ''}"
+                    )
+
+            # Record area avg snapshot for this search after the run
+            self.db.record_area_stats_snapshot(search_id)
+
+            # Compute avg €/m² and active count for this run (from in-memory known + upserted data)
+            active_props = self.db.get_properties(search_id, status="Active")
+            active_count = len(active_props)
+            sqm_values: list[float] = []
+            for p in active_props:
+                raw = p.get("price_per_sqm")
+                if raw:
+                    try:
+                        sqm_values.append(float(raw.split()[0].replace(",", ".")))
+                    except (ValueError, IndexError):
+                        pass
+            avg_sqm = round(sum(sqm_values) / len(sqm_values), 2) if sqm_values else None
+
             self.db.log_scrape_run(
                 search_id=search_id,
                 search_name=search_name,
@@ -144,6 +172,8 @@ class ImotScraper:
                 changed_prices=changed_count,
                 inactive_count=inactive_count,
                 success=True,
+                avg_price_per_sqm=avg_sqm,
+                active_count=active_count,
             )
 
             self.logger.info(
@@ -197,31 +227,6 @@ class ImotScraper:
         session.mount('https://', HTTPAdapter(max_retries=retries))
         return session
 
-    def _read_input_urls(self, file_path: str) -> List[Tuple[str, str]]:
-        """Read URLs and filenames from input CSV"""
-        urls = []
-        try:
-            self.logger.info(f"Reading input URLs from: {file_path}")
-            with open(file_path, "r", encoding="utf-8") as csvfile:
-                reader = csv.DictReader(csvfile)
-                if reader.fieldnames is None:
-                    self.logger.error(f"Input CSV file is empty: {file_path}")
-                    return urls
-                
-                urls = [(row["URL"], row["FileName"]) for row in reader if row.get("URL") and row.get("FileName")]
-            
-            self.logger.info(f"Successfully read {len(urls)} URLs from {file_path}")
-            return urls
-        except FileNotFoundError:
-            self.logger.error(f"Input CSV file not found: {file_path}")
-            return urls
-        except KeyError as e:
-            self.logger.error(f"CSV file missing required column {e}: {file_path}")
-            return urls
-        except Exception as e:
-            self.logger.error(f"Error reading input URLs: {str(e)}")
-            return urls
-
     def _extract_listing_data(self, listing: BeautifulSoup) -> Optional[Tuple[str, str, str, str]]:
         """Extract data from a listing card. Returns (title, price_text, link, record_id)."""
         try:
@@ -251,6 +256,51 @@ class ImotScraper:
             self.logger.error(f"Error processing listing: {e}")
             return None
 
+    def _extract_price_per_sqm(self, soup: BeautifulSoup) -> Optional[str]:
+        """
+        Extract the price-per-square-metre value from a parsed page (detail page
+        or listing card).  The relevant HTML looks like:
+          <span>(1 686 €, 3 297.53 лв./m<sup>2</sup>)</span>
+        The span may be nested at any depth inside the price block, so we search
+        the entire price div without restricting to direct children.
+        Returns e.g. "1686 €/m²" or None if not present.
+        """
+        try:
+            # Use exact class match — NOT a startswith lambda.
+            # The page also contains div.price-stat (translations block) which
+            # appears earlier in the DOM and would be returned by a startswith match.
+            price_div = soup.find("div", class_="price")
+            if not price_div:
+                return None
+
+            # Search all descendant spans — the €/m² span can be nested inside
+            # .cena or other inner elements depending on page type.
+            # Skip spans that belong to the priceHistory block to avoid false matches.
+            price_history = price_div.find("div", class_=lambda x: x and "priceHistory" in x)
+            for span in price_div.find_all("span"):
+                # Skip spans inside the price-history sub-block
+                if price_history and price_history in span.parents:
+                    continue
+                # get_text collapses <sup>2</sup> → "2", giving e.g. "(1 686 €, 3 297.53 лв./m 2 )"
+                text = span.get_text(" ", strip=True)
+                if "/m" not in text:
+                    continue
+                # Capture the EUR figure before the € sign
+                m = re.search(r'\(\s*(\d[\d\s.]*(?:,\d+)?)\s*€', text)
+                if m:
+                    raw = m.group(1).strip()
+                    # Normalise: remove thousands-space, keep decimal dot
+                    # e.g. "1 686" → "1686", "10.43" → "10.43"
+                    value = raw.replace(" ", "").replace(",", ".")
+                    self.logger.debug(f"price/m² extracted: {value} from span text: {repr(text)}")
+                    return f"{value} €/m²"
+
+            self.logger.debug(f"price/m² not found in price div: {repr(price_div.get_text(' ', strip=True)[:80])}")
+            return None
+        except Exception as e:
+            self.logger.debug(f"price/m² extraction error: {e}")
+            return None
+
     def _fetch_detail(self, session: requests.Session, url: str) -> Optional[BeautifulSoup]:
         """Fetch and parse an individual property detail page."""
         try:
@@ -262,23 +312,28 @@ class ImotScraper:
             self.logger.warning(f"Could not fetch detail page {url}: {e}")
             return None
 
-    def _extract_title_and_location(self, session: requests.Session, url: str) -> Tuple[str, str, str, List[str]]:
+    def _extract_title_and_location(self, session: requests.Session, url: str) -> Tuple[str, str, str, List[str], Optional[str]]:
         """
         Fetch the property detail page and extract the clean title, full location,
-        description text, and carousel image URLs.
+        description text, carousel image URLs, and price per square metre.
+
+        The price-per-sqm is read from the detail page's price block (same page
+        as images and description) — it is NOT reliably available on the listing
+        card in the search results page.
 
         Only non-cloned owl-item divs are collected for images (the carousel
         duplicates cloned items for infinite-scroll; those carry the same URLs).
 
-        Returns (title, location, description, image_urls) — empty values on failure.
+        Returns (title, location, description, image_urls, price_per_sqm)
+        — empty/None values on failure.
         """
         soup = self._fetch_detail(session, url)
         if not soup:
-            return "", "", "", []
+            return "", "", "", [], None
 
         adv_header = soup.find("div", class_="advHeader")
         if not adv_header:
-            return "", "", "", []
+            return "", "", "", [], None
 
         # --- Title ---
         title_div = adv_header.find("div", class_="title")
@@ -309,6 +364,12 @@ class ImotScraper:
             if text_div:
                 description = text_div.get_text(separator='\n', strip=True)
 
+        # --- Price per sqm ---
+        # The detail page contains a price block (div.price or similar) that
+        # includes the "€/m²" figure in a span — the same structure as the
+        # listing card but reliably present on the detail page.
+        price_per_sqm = self._extract_price_per_sqm(soup)
+
         # --- Images ---
         # The carouselimg tags already carry the correct full-size CDN URL in
         # their data-src attribute (e.g. cdn3.focus.bg/.../big/ or .../big1/).
@@ -328,7 +389,7 @@ class ImotScraper:
                 seen.add(src)
                 image_urls.append(src)
 
-        return title, location, description, image_urls
+        return title, location, description, image_urls, price_per_sqm
 
     def _extract_price(self, price_div: BeautifulSoup) -> Optional[str]:
         """Extract price information from price div"""

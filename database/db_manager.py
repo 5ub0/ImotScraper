@@ -35,6 +35,12 @@ class DatabaseManager:
     # Internal helpers
     # ------------------------------------------------------------------
 
+    @staticmethod
+    def _local_now() -> str:
+        """Return the current local wall-clock time as 'YYYY-MM-DD HH:MM:SS'.
+        Used everywhere instead of SQLite's CURRENT_TIMESTAMP (which is UTC)."""
+        return datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
     def _get_connection(self) -> sqlite3.Connection:
         """Return a thread-local SQLite connection, creating it if needed."""
         if not getattr(self._local, "conn", None):
@@ -60,17 +66,27 @@ class DatabaseManager:
                 );
 
                 CREATE TABLE IF NOT EXISTS properties (
-                    id          INTEGER PRIMARY KEY AUTOINCREMENT,
-                    record_id   TEXT    NOT NULL,
-                    search_id   INTEGER NOT NULL REFERENCES searches(id) ON DELETE CASCADE,
-                    title       TEXT,
-                    location    TEXT,
-                    description TEXT,
-                    link        TEXT,
-                    status      TEXT    NOT NULL DEFAULT 'Active',
-                    first_seen  DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-                    last_seen   DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    id             INTEGER PRIMARY KEY AUTOINCREMENT,
+                    record_id      TEXT    NOT NULL,
+                    search_id      INTEGER NOT NULL REFERENCES searches(id) ON DELETE CASCADE,
+                    title          TEXT,
+                    location       TEXT,
+                    description    TEXT,
+                    link           TEXT,
+                    status         TEXT    NOT NULL DEFAULT 'Active',
+                    first_seen     DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    last_seen      DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    inactivated_at DATETIME,
+                    price_per_sqm  TEXT,
                     UNIQUE (record_id, search_id)
+                );
+
+                CREATE TABLE IF NOT EXISTS search_area_stats (
+                    id               INTEGER PRIMARY KEY AUTOINCREMENT,
+                    search_id        INTEGER NOT NULL REFERENCES searches(id) ON DELETE CASCADE,
+                    snapshot_date    DATETIME NOT NULL,
+                    avg_price_per_sqm REAL    NOT NULL,
+                    sample_count     INTEGER  NOT NULL DEFAULT 0
                 );
 
                 CREATE TABLE IF NOT EXISTS price_history (
@@ -213,6 +229,46 @@ class DatabaseManager:
 
             logger.info("Migration 3 complete.")
 
+        # ── Migration 4: add inactivated_at column to properties ─────────────
+        prop_cols = [r[1] for r in conn.execute("PRAGMA table_info(properties)").fetchall()]
+        if "inactivated_at" not in prop_cols:
+            logger.info("Migrating properties: adding inactivated_at column...")
+            conn.execute("ALTER TABLE properties ADD COLUMN inactivated_at DATETIME")
+            logger.info("Migration 4 complete.")
+
+        # ── Migration 5: add price_per_sqm column to properties ──────────────
+        prop_cols = [r[1] for r in conn.execute("PRAGMA table_info(properties)").fetchall()]
+        if "price_per_sqm" not in prop_cols:
+            logger.info("Migrating properties: adding price_per_sqm column...")
+            conn.execute("ALTER TABLE properties ADD COLUMN price_per_sqm TEXT")
+            logger.info("Migration 5 complete.")
+
+        # ── Migration 6: create search_area_stats table ───────────────────────
+        tables = {r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type='table'").fetchall()}
+        if "search_area_stats" not in tables:
+            logger.info("Migrating: creating search_area_stats table...")
+            conn.execute("""
+                CREATE TABLE search_area_stats (
+                    id                INTEGER PRIMARY KEY AUTOINCREMENT,
+                    search_id         INTEGER NOT NULL REFERENCES searches(id) ON DELETE CASCADE,
+                    snapshot_date     DATETIME NOT NULL,
+                    avg_price_per_sqm REAL     NOT NULL,
+                    sample_count      INTEGER  NOT NULL DEFAULT 0
+                )
+            """)
+            logger.info("Migration 6 complete.")
+
+        # ── Migration 7: add avg_price_per_sqm + active_count to scrape_runs ─
+        sr_cols = [r[1] for r in conn.execute("PRAGMA table_info(scrape_runs)").fetchall()]
+        if "avg_price_per_sqm" not in sr_cols:
+            logger.info("Migrating scrape_runs: adding avg_price_per_sqm column...")
+            conn.execute("ALTER TABLE scrape_runs ADD COLUMN avg_price_per_sqm REAL")
+            logger.info("Migration 7 (avg_price_per_sqm) complete.")
+        if "active_count" not in sr_cols:
+            logger.info("Migrating scrape_runs: adding active_count column...")
+            conn.execute("ALTER TABLE scrape_runs ADD COLUMN active_count INTEGER")
+            logger.info("Migration 7 (active_count) complete.")
+
     def _recalculate_price_statuses(self, conn: sqlite3.Connection):
         """
         After a migration, set price_status correctly for all rows:
@@ -249,28 +305,33 @@ class DatabaseManager:
         link: str,
         price: str,
         is_new: bool,
+        price_per_sqm: Optional[str] = None,
     ) -> int:
         """
         Insert a new property or update an existing one.
         Records a price_history row ONLY when the property is new or the price changed.
         Description is stored on first fetch and never overwritten (changes are rare
         and the detail page is only fetched for new listings).
+        price_per_sqm is always updated when provided (e.g. "10.43 €/m²").
         Returns the property id.
         """
         with self._get_connection() as conn:
             cursor = conn.cursor()
+            now = self._local_now()
 
             cursor.execute("""
-                INSERT INTO properties (record_id, search_id, title, location, description, link, status, last_seen)
-                VALUES (?, ?, ?, ?, ?, ?, 'Active', CURRENT_TIMESTAMP)
+                INSERT INTO properties (record_id, search_id, title, location, description, link, status, first_seen, last_seen, price_per_sqm)
+                VALUES (?, ?, ?, ?, ?, ?, 'Active', ?, ?, ?)
                 ON CONFLICT(record_id, search_id) DO UPDATE SET
-                    title       = excluded.title,
-                    location    = excluded.location,
-                    description = COALESCE(excluded.description, properties.description),
-                    link        = excluded.link,
-                    status      = 'Active',
-                    last_seen   = CURRENT_TIMESTAMP
-            """, (record_id, search_id, title, location, description, link))
+                    title          = excluded.title,
+                    location       = excluded.location,
+                    description    = COALESCE(excluded.description, properties.description),
+                    link           = excluded.link,
+                    status         = 'Active',
+                    last_seen      = excluded.last_seen,
+                    inactivated_at = NULL,
+                    price_per_sqm  = COALESCE(excluded.price_per_sqm, properties.price_per_sqm)
+            """, (record_id, search_id, title, location, description, link, now, now, price_per_sqm))
 
             cursor.execute(
                 "SELECT id FROM properties WHERE record_id = ? AND search_id = ?",
@@ -288,9 +349,9 @@ class DatabaseManager:
                     WHERE property_id = ? AND price_status = 'Current'
                 """, (property_id,))
                 cursor.execute("""
-                    INSERT INTO price_history (property_id, price, price_status, is_new)
-                    VALUES (?, ?, 'Current', ?)
-                """, (property_id, price, 1 if is_new else 0))
+                    INSERT INTO price_history (property_id, price, price_status, is_new, recorded_at)
+                    VALUES (?, ?, 'Current', ?, ?)
+                """, (property_id, price, 1 if is_new else 0, now))
 
             return property_id
 
@@ -377,24 +438,25 @@ class DatabaseManager:
         """
         with self._get_connection() as conn:
             cursor = conn.cursor()
+            now = self._local_now()
             if active_record_ids:
                 placeholders = ",".join("?" * len(active_record_ids))
                 cursor.execute(f"""
                     UPDATE properties
-                    SET    status    = 'Inactive',
-                           last_seen = CURRENT_TIMESTAMP
+                    SET    status         = 'Inactive',
+                           inactivated_at = ?
                     WHERE  search_id = ?
                       AND  status    = 'Active'
                       AND  record_id NOT IN ({placeholders})
-                """, [search_id] + active_record_ids)
+                """, [now, search_id] + active_record_ids)
             else:
                 cursor.execute("""
                     UPDATE properties
-                    SET    status    = 'Inactive',
-                           last_seen = CURRENT_TIMESTAMP
+                    SET    status         = 'Inactive',
+                           inactivated_at = ?
                     WHERE  search_id = ?
                       AND  status    = 'Active'
-                """, (search_id,))
+                """, (now, search_id))
             count = cursor.rowcount
             if count:
                 logger.info(f"Marked {count} propert{'y' if count == 1 else 'ies'} as Inactive for search_id={search_id}")
@@ -410,16 +472,19 @@ class DatabaseManager:
         inactive_count: int,
         success: bool,
         error_message: Optional[str] = None,
+        avg_price_per_sqm: Optional[float] = None,
+        active_count: Optional[int] = None,
     ):
         """Persist a summary row for one scrape run."""
         with self._get_connection() as conn:
             conn.execute("""
                 INSERT INTO scrape_runs
-                    (search_id, search_name, records_found, new_records, changed_prices,
-                     inactive_count, success, error_message)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-            """, (search_id, search_name, records_found, new_records, changed_prices,
-                  inactive_count, 1 if success else 0, error_message))
+                    (search_id, search_name, run_date, records_found, new_records, changed_prices,
+                     inactive_count, success, error_message, avg_price_per_sqm, active_count)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """, (search_id, search_name, self._local_now(), records_found, new_records,
+                  changed_prices, inactive_count, 1 if success else 0, error_message,
+                  avg_price_per_sqm, active_count))
 
     # ------------------------------------------------------------------
     # Read operations
@@ -440,6 +505,15 @@ class DatabaseManager:
                 ).fetchall()
             return [dict(r) for r in rows]
 
+    def get_link_for_record(self, record_id: str, search_id: int) -> Optional[str]:
+        """Return the listing URL for a given record_id / search_id pair, or None."""
+        with self._get_connection() as conn:
+            row = conn.execute(
+                "SELECT link FROM properties WHERE record_id = ? AND search_id = ? LIMIT 1",
+                (record_id, search_id)
+            ).fetchone()
+            return row["link"] if row else None
+
     def get_property_by_link(self, link: str) -> Optional[Dict]:
         """Return a single property dict looked up by its listing URL, or None."""
         with self._get_connection() as conn:
@@ -457,14 +531,6 @@ class DatabaseManager:
                 (property_id,)
             ).fetchall()
             return [dict(r) for r in rows]
-
-    def get_property_by_link(self, link: str) -> Optional[Dict]:
-        """Return the property row matching the given listing URL, or None."""
-        with self._get_connection() as conn:
-            row = conn.execute(
-                "SELECT * FROM properties WHERE link = ? LIMIT 1", (link,)
-            ).fetchone()
-            return dict(row) if row else None
 
     def get_new_and_changed_since_last_run(self, search_id: int) -> Dict[str, List[Dict]]:
         """
@@ -516,8 +582,8 @@ class DatabaseManager:
                 "changed": [dict(r) for r in changed_records],
             }
 
-    def get_scrape_history(self, search_id: int, limit: int = 10) -> List[Dict]:
-        """Return recent scrape run summaries."""
+    def get_scrape_history(self, search_id: int, limit: int = 365) -> List[Dict]:
+        """Return recent scrape run summaries, newest first."""
         with self._get_connection() as conn:
             rows = conn.execute(
                 "SELECT * FROM scrape_runs WHERE search_id = ? ORDER BY run_date DESC LIMIT ?",
@@ -531,6 +597,73 @@ class DatabaseManager:
             rows = conn.execute(
                 "SELECT * FROM scrape_runs ORDER BY run_date DESC LIMIT ?",
                 (limit,)
+            ).fetchall()
+            return [dict(r) for r in rows]
+
+    def backfill_price_per_sqm(self, record_id: str, search_id: int,
+                                price_per_sqm: str) -> None:
+        """
+        Set price_per_sqm on an existing row ONLY when the column is currently
+        NULL.  Called for unchanged listings so existing rows get backfilled on
+        the next scrape run without triggering a full upsert.
+        """
+        with self._get_connection() as conn:
+            conn.execute(
+                """
+                UPDATE properties
+                SET    price_per_sqm = ?
+                WHERE  record_id = ? AND search_id = ?
+                  AND  (price_per_sqm IS NULL OR price_per_sqm = '')
+                """,
+                (price_per_sqm, record_id, search_id),
+            )
+
+    def record_area_stats_snapshot(self, search_id: int) -> Optional[float]:
+        """
+        Compute the average price_per_sqm (numeric EUR value) across all
+        *Active* properties in this search that have a price_per_sqm stored,
+        insert a snapshot row into search_area_stats, and return the average.
+        Returns None if no numeric values are available.
+        """
+        with self._get_connection() as conn:
+            rows = conn.execute(
+                """SELECT price_per_sqm FROM properties
+                   WHERE search_id = ? AND status = 'Active' AND price_per_sqm IS NOT NULL""",
+                (search_id,)
+            ).fetchall()
+
+        values: List[float] = []
+        for row in rows:
+            raw = row["price_per_sqm"]
+            try:
+                # stored as "10.43 €/m²" — extract the leading float
+                numeric = float(raw.split()[0].replace(",", "."))
+                values.append(numeric)
+            except (ValueError, AttributeError, IndexError):
+                pass
+
+        if not values:
+            return None
+
+        avg = round(sum(values) / len(values), 2)
+        with self._get_connection() as conn:
+            conn.execute(
+                """INSERT INTO search_area_stats (search_id, snapshot_date, avg_price_per_sqm, sample_count)
+                   VALUES (?, ?, ?, ?)""",
+                (search_id, self._local_now(), avg, len(values))
+            )
+        return avg
+
+    def get_area_stats_history(self, search_id: int, limit: int = 365) -> List[Dict]:
+        """Return avg price/m² snapshots for a search, oldest first (for charting)."""
+        with self._get_connection() as conn:
+            rows = conn.execute(
+                """SELECT snapshot_date, avg_price_per_sqm, sample_count
+                   FROM search_area_stats
+                   WHERE search_id = ?
+                   ORDER BY snapshot_date ASC
+                   LIMIT ?""",
+                (search_id, limit)
             ).fetchall()
             return [dict(r) for r in rows]
 
@@ -601,27 +734,3 @@ class DatabaseManager:
                          (search_id, search_name))
             conn.execute("DELETE FROM searches    WHERE id = ?",          (search_id,))
             logger.info(f"Deleted search '{search_name}' and all associated data.")
-
-    def migrate_from_csv(self, csv_path: str):
-        """
-        One-time migration: import searches from the legacy inputURLS.csv
-        into the searches table. Skips rows that already exist.
-        """
-        import csv as csv_module
-        if not os.path.exists(csv_path):
-            return
-        imported = 0
-        with open(csv_path, "r", encoding="utf-8") as f:
-            for row in csv_module.DictReader(f):
-                url         = row.get("URL", "").strip()
-                filename    = row.get("FileName", "").strip()
-                emails      = row.get("Send to Emails", "").strip()
-                search_name = filename.replace(".csv", "").strip()
-                if url and search_name:
-                    try:
-                        self.add_search(search_name, url, emails)
-                        imported += 1
-                    except ValueError:
-                        pass  # already exists – skip
-        if imported:
-            logger.info(f"Migrated {imported} search(es) from {csv_path} into the database.")

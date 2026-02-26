@@ -7,14 +7,35 @@ Results are stored in a local SQLite database and can be browsed directly inside
 
 ## What's New (latest release)
 
-### PyQt6 GUI — complete redesign
-The user interface has been fully rebuilt using **PyQt6** with a professional dark theme:
-- Dark `#1e1e1e` background with Segoe UI typography
-- Live scrape results **feed** with colour-coded rows:
-  - 🟢 **NEW** — brand new listing detected
-  - 🟡 **CHANGED** — price updated since last run
-  - 🔴 **DELETED** — listing no longer on the site
+### Analytics charts
+Two interactive charts are now available inside the Results window for each search:
+
+**📊 Area Avg Chart**
+- Line graph of the average €/m² across all active listings, recorded on every scrape run
+- Rolling 7-point trend line overlaid in green
+- Green ±10 % band around the latest average for quick reference
+- Individual listing dots plotted at their `first_seen` date — orange if >10 % below the area average
+- Click any dot to open that listing's gallery
+- Long histories are binned automatically (daily → weekly → monthly) so the graph always stays readable
+
+**📈 Active Listings History**
+- Line graph of the number of active listings over time, sourced from scrape run records
+- Rolling trend line
+- Axis ranges are padded around the actual data — no empty space or cramped corners with sparse data
+
+### Price per m² tracking
+- `price_per_sqm` extracted and stored for every listing that contains a floor-area figure
+- Area average snapshot recorded after each scrape run
+- Underpriced listings (>10 % below area avg) highlighted with a teal tint in the Results table and an orange dot in the chart
+
+### Feed — all three event types
+- 🟢 **NEW** — brand new listing detected
+- 🟡 **CHANGED** — price updated since last run (link now included, double-click opens gallery)
+- 🔴 **DELETED** — listing no longer on the site (per-listing log lines, link included)
 - Feed columns: **Search | Type | Title | Price** — rows persist until the next run
+
+### PyQt6 GUI — dark theme
+- Dark `#1e1e1e` background with Segoe UI typography
 - Sortable results table with double-click to open the gallery
 - Fully dark image gallery with keyboard navigation
 - No external dependencies beyond the bundled `.exe`
@@ -37,6 +58,7 @@ The codebase is organised into dedicated packages:
 - **Title** and **Location** — parsed from the listing detail page
 - **Description** — full text from the detail page (stored once, never overwritten)
 - **Price history** — every observed price recorded with timestamp and status (Current / Previous / Older)
+- **Price per m²** — extracted from the title/price text when a floor area is present
 - **Images** — up to 10 images per listing, stored in the database
 
 ### Email notifications — coming soon
@@ -55,6 +77,9 @@ Email reporting will be enabled in a future release.
 - Price change detection with full price history log
 - Inactive listing detection (property removed from site)
 - In-app results browser with sortable columns and status colour coding
+- Underpriced listing highlighting (>10 % below area average)
+- **📊 Area Avg Chart** — €/m² trend with individual listing dots (clickable)
+- **📈 Active Listings History** — active listing count over time
 - Image gallery with price history table and description panel
 - Standalone `.exe` — no Python installation required
 
@@ -118,12 +143,14 @@ All data is stored in a single SQLite database:
   data/
     imot_scraper.db
 
-| Table             | Contents                                  |
-|-------------------|-------------------------------------------|
-| searches          | Saved search URLs and names               |
-| properties        | All scraped listings                      |
-| price_history     | Full price timeline per listing           |
-| property_images   | Image BLOBs (up to 10 per listing)        |
+| Table              | Contents                                              |
+|--------------------|-------------------------------------------------------|
+| searches           | Saved search URLs and names                           |
+| properties         | All scraped listings (incl. price_per_sqm)            |
+| price_history      | Full price timeline per listing                       |
+| property_images    | Image BLOBs (up to 10 per listing)                    |
+| search_area_stats  | Daily avg €/m² snapshots per search (legacy)          |
+| scrape_runs        | Per-run summary: found / new / changed / inactive / avg €/m² / active count |
 
 No CSV files are written. The database file can be backed up by simply copying it.
 

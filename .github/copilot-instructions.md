@@ -4,7 +4,7 @@
 
 ImotScraper is a Windows desktop application written in **Python 3.14**.
 It scrapes property listings from **imot.bg**, stores everything in a local SQLite database,
-and presents the results in a **PyQt6** GUI with a dark theme, a live scrape feed, an image gallery, and price history.
+and presents the results in a **PyQt6** GUI with a dark theme, a live scrape feed, an image gallery, price history, and analytics charts.
 Distributed as a single self-contained Windows executable built with PyInstaller.
 
 ---
@@ -65,6 +65,17 @@ GUI  →  Controller  →  Scraper / DB / Scheduler
 - Foreign keys: `PRAGMA foreign_keys = ON`. New tables must declare `FOREIGN KEY` constraints.
 - DB file: `data/imot_scraper.db` — in `.gitignore`, never commit.
 
+### Schema summary
+
+| Table               | Key columns / purpose |
+|---------------------|-----------------------|
+| `searches`          | `id`, `search_name`, `url`, `emails` |
+| `properties`        | `record_id`, `search_id`, `title`, `location`, `description`, `link`, `status`, `first_seen`, `last_seen`, `inactivated_at`, `price_per_sqm` |
+| `price_history`     | `property_id`, `price`, `price_status` (Current/Previous/Older), `is_new`, `recorded_at` |
+| `property_images`   | `property_id`, `url`, `image_data` BLOB, `position` |
+| `search_area_stats` | Legacy daily avg €/m² snapshots — still written but charts now read from `scrape_runs` |
+| `scrape_runs`       | `search_id`, `run_date`, `records_found`, `new_records`, `changed_prices`, `inactive_count`, `avg_price_per_sqm` REAL, `active_count` INTEGER, `success`, `error_message` |
+
 ---
 
 ## Scraper internals
@@ -78,10 +89,13 @@ GUI  →  Controller  →  Scraper / DB / Scheduler
 - Image extraction: `soup.find_all("img", class_="carouselimg")` → `img["data-src"]`. Carousel clones are deduplicated with a `seen` set. Cap: **10 images per listing**.
 - Pagination: appends `/p-{n}` before `?` in the URL; stops when no `<a class="saveSlink next">` is found.
 - After each search, unseen listings are marked `Inactive` via `db.mark_inactive()`.
+- After `mark_inactive`, a per-listing loop emits one `"Removed listing: …"` log line for each inactivated record (uses the pre-loaded `known` dict + `db.get_link_for_record()`).
+- After each search: `record_area_stats_snapshot()` is called (legacy), then all active properties are iterated to compute `avg_price_per_sqm` and `active_count`, which are passed to `log_scrape_run()`.
 - Delays: `REQUEST_DELAY = 1 s` between pages, `DETAIL_DELAY = 0.3 s` between detail fetches.
 - Log line formats (parsed by `ResultsFeedHandler` in the GUI):
   - `"New listing: {title} | price: {price} | search: {search_name} | {link}"`
-  - `"Price change: {title} {old} → {new} | search: {search_name}"`
+  - `"Price change: {title} | old: {old_price} | new: {new_price} | search: {search_name} | {link}"`
+  - `"Removed listing: {title} | search: {search_name} | {link}"`
 
 ---
 
@@ -123,6 +137,26 @@ GUI  →  Controller  →  Scraper / DB / Scheduler
 - `setSortingEnabled(False)` during `_populate()` — re-enable after all rows inserted.
 - Prop dict stored in `item.setData(Qt.ItemDataRole.UserRole, enriched)` on col 0; read back in `_on_double_click` via `status_item.data(Qt.ItemDataRole.UserRole)`.
 - Active rows: `BG2` background, `FG_WHITE` foreground, normal font. Inactive: `BG` background, `FG_DIM` foreground, italic.
+- Underpriced rows (active; `price_per_sqm` > 10 % below area avg): `FEED_UNDERPRICED_BG` teal tint.
+- Two chart buttons in the summary bar: **📊 Area Avg Chart** → `AreaAvgChartDialog`; **📈 Active Listings History** → `ListingsFoundChartDialog`.
+
+### Chart dialogs (`AreaAvgChartDialog`, `ListingsFoundChartDialog`)
+Both use `matplotlib` with `backend_qtagg`, lazy-imported inside `__init__`.
+
+**Shared module-level helpers:**
+- `_bin_series(dates, values, bin_by="auto")` — bins a time series: ≤90 points → day, ≤365-day span → week, longer → month.
+- `_rolling_avg(values, win)` — centred rolling mean.
+
+**`AreaAvgChartDialog`:**
+- Data source: `scrape_runs.avg_price_per_sqm` via `controller.get_scrape_history()` (rows with `None` filtered out).
+- Line + markers for binned avg; dashed green rolling trend; green `axhspan` ±10 % band around latest avg.
+- Active property scatter dots at `first_seen` date; orange if >10 % below latest avg; `pick_event` → `GalleryWindow.exec()`.
+- Explicit axis padding: 5 % x-span each side, 15 % y-margin above/below combined data extent.
+
+**`ListingsFoundChartDialog`** (button: "📈 Active Listings History"):
+- Data source: `scrape_runs.active_count`; falls back to `records_found` for old rows without `active_count`.
+- Line + markers; dashed green rolling trend (only if ≥3 points). No `fill_between`.
+- Explicit axis padding: ±1 day for a single point, 5 % span otherwise; 15 % y-margin.
 
 ### GalleryWindow (`QDialog`)
 - `QLabel` + `QPixmap` image display with `Qt.AspectRatioMode.KeepAspectRatio` scaling.
@@ -134,6 +168,7 @@ GUI  →  Controller  →  Scraper / DB / Scheduler
 
 ### Log panel
 - `ResultsFeedHandler` intercepts `logging.INFO` lines that match the scraper feed patterns.
+- Regexes: `_RE_NEW` (4 groups), `_RE_CHANGED` (5 groups, group 5 = link), `_RE_DELETED` (3 groups, group 3 = link, uses `\S*` not `\S+` to tolerate empty link).
 - All other log output goes to a `QTextEdit` log panel via a standard `logging.Handler`.
 - Use `logger.debug` for anything that should not appear in the GUI log panel.
 
@@ -156,6 +191,8 @@ GUI  →  Controller  →  Scraper / DB / Scheduler
 ```powershell
 .venv\Scripts\python.exe -m PyInstaller ImotScraper.spec --noconfirm
 # Output: dist/ImotScraper.exe (~46 MB, no console window)
+# Exit code 1 is expected — caused by the admin deprecation warning, not a real error.
+# Confirm success with: "Build complete!" in the last lines of output.
 ```
 
 When adding a new third-party package, add it to both `requirements.txt` **and** `hiddenimports` in `ImotScraper.spec`.
@@ -183,3 +220,4 @@ When adding a new third-party package, add it to both `requirements.txt` **and**
 - Never call Qt widget methods from a background thread — use signals.
 - No `print()` for logging — use `self.logger`.
 - Do not commit `data/imot_scraper.db`, `dist/`, or `build/`.
+

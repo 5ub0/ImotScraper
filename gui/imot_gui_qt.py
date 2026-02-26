@@ -17,14 +17,13 @@ import os
 import queue
 import re
 import threading
-import webbrowser
 from typing import Optional
 
 from PyQt6.QtCore import (
-    Qt, QSize, QTimer, pyqtSignal, QObject, QRect,
+    Qt, QSize, QTimer, pyqtSignal, QObject, QRect, QUrl,
 )
 from PyQt6.QtGui import (
-    QColor, QFont, QBrush, QPixmap, QImage, QIcon, QPainter,
+    QColor, QFont, QBrush, QPixmap, QImage, QIcon, QPainter, QDesktopServices,
 )
 from PyQt6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QDialog,
@@ -167,12 +166,13 @@ class ResultsFeedHandler(logging.Handler):
     a FeedBridge signal (thread-safe — Qt handles cross-thread signals).
 
     Line formats:
-      "New listing: <title> | price: <price> | <link>"
-      "Price change: <title> <old> → <new>"
+      "New listing: <title> | price: <price> | search: <search> | <link>"
+      "Price change: <title> | old: <old> | new: <new> | search: <search>"
     """
 
     _RE_NEW        = re.compile(r"New listing: (.+?) \| price: (.+?) \| search: (.+?) \| (https?://\S+)")
-    _RE_CHANGED    = re.compile(r"Price change: (.+?) (\S+) → (\S+) \| search: (.+)")
+    _RE_CHANGED    = re.compile(r"Price change: (.+?) \| old: (.+?) \| new: (.+?) \| search: (.+?) \| (https?://\S+)")
+    _RE_DELETED    = re.compile(r"Removed listing: (.+?) \| search: (.+?) \| (https?://\S*)")
     _RE_PROCESSING = re.compile(r"Processing: (.+)")
 
     def __init__(self, bridge: FeedBridge) -> None:
@@ -199,7 +199,17 @@ class ResultsFeedHandler(logging.Handler):
                 "old_price":   m.group(2).strip(),
                 "price":       m.group(3).strip(),
                 "search_name": m.group(4).strip(),
-                "link":        "",
+                "link":        m.group(5).strip(),
+            })
+            return
+        m = self._RE_DELETED.search(msg)
+        if m:
+            self._bridge.event_received.emit({
+                "kind":        "DELETED",
+                "title":       m.group(1).strip(),
+                "price":       "—",
+                "search_name": m.group(2).strip(),
+                "link":        m.group(3).strip(),
             })
             return
         m = self._RE_PROCESSING.search(msg)
@@ -396,7 +406,9 @@ class GalleryWindow(QDialog):
                 f"color: {T.ACCENT}; text-decoration: underline;"
             )
             title_lbl.setCursor(Qt.CursorShape.PointingHandCursor)
-            title_lbl.mousePressEvent = lambda _e: webbrowser.open(link_url)
+            def _open_link(_event, u=link_url) -> None:
+                QDesktopServices.openUrl(QUrl(u))
+            title_lbl.mousePressEvent = _open_link
         info_layout.addWidget(QLabel("Title:"), row, 0, Qt.AlignmentFlag.AlignTop)
         info_layout.addWidget(title_lbl, row, 1, Qt.AlignmentFlag.AlignTop)
         row += 1
@@ -522,22 +534,25 @@ class ResultsWindow(QDialog):
     """Shows all properties for a saved search in a sortable table."""
 
     def __init__(self, parent: QWidget, search_name: str,
-                 properties: list[dict], controller) -> None:
+                 properties: list[dict], controller,
+                 search_id: int | None = None) -> None:
         super().__init__(parent)
         self.setWindowTitle(f"Results — {search_name}")
-        self.resize(1200, 620)
+        self.resize(1300, 620)
         self.setMinimumSize(900, 400)
         _set_dark_titlebar(self)
 
-        self._controller = controller
+        self._controller  = controller
+        self._search_id   = search_id
+        self._search_name = search_name
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(8, 8, 8, 8)
         layout.setSpacing(6)
 
         # Table
-        cols = ["Status", "Title", "Location", "Price",
-                "First Seen", "Last Seen", "Images", "Link"]
+        cols = ["Status", "Title", "Location", "Price", "€/m²",
+                "First Seen", "Last Seen", "Inactive At", "Images", "Link"]
         self._table = QTableWidget(0, len(cols))
         self._table.setHorizontalHeaderLabels(cols)
         self._table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Interactive)
@@ -551,14 +566,24 @@ class ResultsWindow(QDialog):
         self._table.setSortingEnabled(False)   # enabled AFTER populate to avoid row scrambling
         self._table.setShowGrid(True)
 
-        # Column widths
+        # Column widths (0=Status, 1=Title, 2=Location, 3=Price, 4=€/m², 5=First Seen,
+        #                6=Last Seen, 7=Inactive At, 8=Images, 9=Link)
         self._table.setColumnWidth(0, 80)
         self._table.setColumnWidth(1, 220)
         self._table.setColumnWidth(2, 180)
         self._table.setColumnWidth(3, 130)
-        self._table.setColumnWidth(4, 130)
+        self._table.setColumnWidth(4, 90)
         self._table.setColumnWidth(5, 130)
-        self._table.setColumnWidth(6, 60)
+        self._table.setColumnWidth(6, 130)
+        self._table.setColumnWidth(7, 130)
+        self._table.setColumnWidth(8, 60)
+
+        # Fetch latest area avg for underpriced highlighting
+        self._area_avg: float | None = None
+        if controller and search_id is not None:
+            history = controller.get_area_stats_history(search_id, limit=1)
+            if history:
+                self._area_avg = history[-1].get("avg_price_per_sqm")
 
         self._populate(
             sorted(properties, key=lambda p: (0 if p["status"] == "Active" else 1)),
@@ -569,11 +594,27 @@ class ResultsWindow(QDialog):
         # Summary bar
         active   = sum(1 for p in properties if p["status"] == "Active")
         inactive = len(properties) - active
+        avg_txt  = f"  |  Area avg: {self._area_avg:.2f} €/m²" if self._area_avg else ""
         summary_lbl = _dim_label(
             f"Total: {len(properties)}  |  Active: {active}  |  "
-            f"Inactive: {inactive}  |  Double-click a row to view gallery"
+            f"Inactive: {inactive}{avg_txt}  |  Double-click a row to view gallery"
         )
-        layout.addWidget(summary_lbl)
+
+        summary_bar = QHBoxLayout()
+        summary_bar.addWidget(summary_lbl, stretch=1)
+
+        if search_id is not None:
+            chart_btn = make_button(self, text="📊 Area Avg Chart",
+                                    callback=self._open_area_chart)
+            chart_btn.setFixedWidth(150)
+            summary_bar.addWidget(chart_btn)
+
+            found_btn = make_button(self, text="📈 Active Listings History",
+                                    callback=self._open_listings_found_chart)
+            found_btn.setFixedWidth(190)
+            summary_bar.addWidget(found_btn)
+
+        layout.addLayout(summary_bar)
 
         self._table.cellDoubleClicked.connect(self._on_double_click)
         self._table.cellClicked.connect(self._on_click)
@@ -596,23 +637,42 @@ class ResultsWindow(QDialog):
             self._table.insertRow(row_idx)
             self._table.setRowHeight(row_idx, T.ROW_H)
 
+            sqm_val   = prop.get("price_per_sqm") or "—"
+
             cells = [
                 prop["status"],
                 prop.get("title") or "—",
                 prop.get("location") or "—",
                 current_price,
+                sqm_val,
                 prop["first_seen"][:16] if prop.get("first_seen") else "—",
                 prop["last_seen"][:16]  if prop.get("last_seen")  else "—",
+                prop["inactivated_at"][:16] if prop.get("inactivated_at") else "—",
                 img_label,
                 prop.get("link") or "—",
             ]
 
             is_active = (prop["status"] == "Active")
-            # Active rows = slightly lighter panel; Inactive = main bg
-            row_bg    = QColor(T.BG2) if is_active else QColor(T.BG)
-            # Active = normal weight white; Inactive = dimmed
-            text_fg   = QColor(T.FG_WHITE) if is_active else QColor(T.FG_DIM)
-            row_font  = QFont(T.FONT_FAMILY, T.FONT_SIZE)
+
+            # Determine if this row is underpriced (active only; needs numeric sqm)
+            is_underpriced = False
+            if is_active and self._area_avg and sqm_val != "—":
+                try:
+                    sqm_float = float(sqm_val.split()[0].replace(",", "."))
+                    is_underpriced = sqm_float < self._area_avg * 0.9
+                except (ValueError, IndexError):
+                    pass
+
+            # Active rows = slightly lighter panel; Inactive = main bg; underpriced = teal tint
+            if is_underpriced:
+                row_bg = QColor(T.FEED_UNDERPRICED_BG)
+            elif is_active:
+                row_bg = QColor(T.BG2)
+            else:
+                row_bg = QColor(T.BG)
+
+            text_fg  = QColor(T.FG_WHITE) if is_active else QColor(T.FG_DIM)
+            row_font = QFont(T.FONT_FAMILY, T.FONT_SIZE)
             if not is_active:
                 row_font.setItalic(True)
 
@@ -623,7 +683,7 @@ class ResultsWindow(QDialog):
                 item.setFont(row_font)
                 item.setTextAlignment(
                     Qt.AlignmentFlag.AlignCenter | Qt.AlignmentFlag.AlignVCenter
-                    if col in (0, 4, 5, 6)
+                    if col in (0, 4, 5, 6, 7, 8)
                     else Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft
                 )
                 # Store enriched prop on the Status cell (col 0) for retrieval
@@ -636,10 +696,10 @@ class ResultsWindow(QDialog):
 
     def _on_click(self, row: int, col: int) -> None:
         """Single click on Link column opens URL in browser."""
-        if col == 7:
+        if col == 9:
             link = self._table.item(row, col)
             if link and link.text() != "—":
-                webbrowser.open(link.text())
+                QDesktopServices.openUrl(QUrl(link.text()))
 
     def _on_double_click(self, row: int, _col: int) -> None:
         # Prop is stored on the Status cell (col 0) via UserRole
@@ -650,8 +710,373 @@ class ResultsWindow(QDialog):
                 gw = GalleryWindow(self, prop, self._controller)
                 gw.exec()
 
+    def _open_area_chart(self) -> None:
+        """Open the Area Average Price chart for this search."""
+        dlg = AreaAvgChartDialog(self, self._search_name, self._search_id, self._controller)
+        dlg.exec()
 
-# ── Main window ────────────────────────────────────────────────────────────────
+    def _open_listings_found_chart(self) -> None:
+        """Open the Listings Found chart for this search."""
+        dlg = ListingsFoundChartDialog(self, self._search_name, self._search_id, self._controller)
+        dlg.exec()
+
+
+# ── Shared charting helper ─────────────────────────────────────────────────────
+
+def _bin_series(dates: list, values: list, bin_by: str = "auto") -> tuple[list, list]:
+    """
+    Aggregate (dates, values) into fewer points for readability.
+
+    bin_by:
+      "auto"  – chooses based on span: <90 pts → day, <365 pts → week, else → month
+      "day"   – average per calendar day
+      "week"  – average per ISO week
+      "month" – average per calendar month
+
+    Returns (binned_dates, binned_values) with the bin's midpoint date and mean value.
+    """
+    from datetime import datetime, timedelta
+    from collections import defaultdict
+
+    if not dates:
+        return [], []
+
+    span_days = (dates[-1] - dates[0]).days if len(dates) > 1 else 0
+
+    if bin_by == "auto":
+        if len(dates) <= 90:
+            bin_by = "day"
+        elif span_days <= 365:
+            bin_by = "week"
+        else:
+            bin_by = "month"
+
+    buckets: dict[str, list] = defaultdict(list)
+    for d, v in zip(dates, values):
+        if v is None:
+            continue
+        if bin_by == "day":
+            key = d.strftime("%Y-%m-%d")
+        elif bin_by == "week":
+            key = f"{d.isocalendar()[0]}-W{d.isocalendar()[1]:02d}"
+        else:  # month
+            key = d.strftime("%Y-%m")
+        buckets[key].append((d, v))
+
+    result_dates, result_values = [], []
+    for key in sorted(buckets.keys()):
+        pairs = buckets[key]
+        mid_d = pairs[len(pairs) // 2][0]   # median date in bucket
+        mean_v = sum(p[1] for p in pairs) / len(pairs)
+        result_dates.append(mid_d)
+        result_values.append(mean_v)
+
+    return result_dates, result_values
+
+
+def _rolling_avg(values: list[float], win: int) -> list[float]:
+    """Centred rolling mean with the given window size."""
+    roll = []
+    for i in range(len(values)):
+        lo = max(0, i - win // 2)
+        hi = min(len(values), lo + win)
+        roll.append(sum(values[lo:hi]) / (hi - lo))
+    return roll
+
+
+# ── Area Average Price Chart ───────────────────────────────────────────────────
+
+class AreaAvgChartDialog(QDialog):
+    """Line chart of the daily area-average price-per-m² stored in scrape_runs.
+
+    • Each scrape run stores avg_price_per_sqm; multiple runs per day are averaged.
+    • Long histories are binned automatically (day / week / month).
+    • Active property dots are overlaid at their first_seen date.
+    • Click any dot to open that property's gallery.
+    • Green shaded band shows the ±10 % range around the most recent avg.
+    """
+
+    def __init__(self, parent: QWidget, search_name: str,
+                 search_id: int | None, controller) -> None:
+        super().__init__(parent)
+        self.setWindowTitle(f"Area Avg Price/m² — {search_name}")
+        self.resize(960, 540)
+        self.setMinimumSize(500, 320)
+        _set_dark_titlebar(self)
+
+        self._controller = controller
+        self._search_id  = search_id
+        self._dot_props: dict = {}
+
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(8, 8, 8, 8)
+
+        runs: list[dict] = []
+        if controller and search_id is not None:
+            runs = controller.get_scrape_history(search_id, limit=365)
+
+        # Filter to runs that actually have an avg stored
+        runs_with_avg = [r for r in runs if r.get("avg_price_per_sqm") is not None]
+
+        if not runs_with_avg:
+            layout.addWidget(_dim_label(
+                "No area average data yet. Run a scrape first — avg €/m² is stored per run."
+            ))
+            return
+
+        try:
+            from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg
+            from matplotlib.figure import Figure
+            import matplotlib.dates as mdates
+            from datetime import datetime
+
+            # Build raw series (one point per run, oldest first)
+            raw_dates: list[datetime] = []
+            raw_values: list[float]   = []
+            for r in reversed(runs_with_avg):   # runs are newest-first from DB
+                try:
+                    raw_dates.append(datetime.strptime(r["run_date"][:16], "%Y-%m-%d %H:%M"))
+                    raw_values.append(float(r["avg_price_per_sqm"]))
+                except (ValueError, TypeError):
+                    pass
+
+            # Dynamic binning
+            dates, values = _bin_series(raw_dates, raw_values, bin_by="auto")
+
+            if not dates:
+                layout.addWidget(_dim_label("No valid area average data to display."))
+                return
+
+            # ── Scatter dots for active properties ────────────────────────────
+            prop_dots: list[dict] = []
+            if controller and search_id is not None:
+                db = controller.db
+                if db:
+                    active_props = db.get_properties(search_id, status="Active")
+                    fallback_x = dates[-1]
+                    for p in active_props:
+                        raw = p.get("price_per_sqm")
+                        if not raw or raw == "—":
+                            continue
+                        try:
+                            val = float(raw.split()[0].replace(",", "."))
+                        except (ValueError, IndexError):
+                            continue
+                        dot_x = fallback_x
+                        fs = p.get("first_seen")
+                        if fs:
+                            try:
+                                dot_x = datetime.strptime(fs[:16], "%Y-%m-%d %H:%M")
+                            except ValueError:
+                                pass
+                        ph = db.get_price_history(p["id"])
+                        p["current_price"] = next(
+                            (r["price"] for r in ph if r["price_status"] == "Current"), "—"
+                        )
+                        prop_dots.append({"x": dot_x, "y": val, "prop": p})
+
+            # ── Figure ────────────────────────────────────────────────────────
+            fig = Figure(figsize=(9.5, 4.8), tight_layout=True, facecolor="#1e1e1e")
+            ax  = fig.add_subplot(111)
+            ax.set_facecolor("#2b2b2b")
+
+            # Main avg line
+            ax.plot(dates, values, color="#0d7aff", linewidth=2.0, marker="o",
+                    markersize=4, label="Avg €/m²", zorder=2)
+
+            # Rolling trend line (7-pt centred window, or fewer if little data)
+            if len(values) >= 2:
+                win = min(7, len(values))
+                roll = _rolling_avg(values, win)
+                ax.plot(dates, roll, color="#4caf50", linewidth=1.8,
+                        linestyle="--", alpha=0.85, label=f"{win}-pt trend", zorder=3)
+
+            # Green ±10 % band around the most-recent avg value
+            last_avg = values[-1]
+            ax.axhspan(last_avg * 0.9, last_avg * 1.1, alpha=0.07,
+                       color="#4caf50",
+                       label=f"±10 % of latest ({last_avg:.0f} €/m²)")
+
+            # Annotate latest point
+            ax.annotate(f"{last_avg:.2f}",
+                        xy=(dates[-1], last_avg),
+                        xytext=(10, 6), textcoords="offset points",
+                        color="#ffffff", fontsize=8)
+
+            # Property scatter dots
+            if prop_dots:
+                xs = [d["x"] for d in prop_dots]
+                ys = [d["y"] for d in prop_dots]
+                colors = [
+                    "#ff9800" if d["y"] < last_avg * 0.9 else "#e0e0e0"
+                    for d in prop_dots
+                ]
+                sc = ax.scatter(xs, ys, c=colors, s=55, zorder=4,
+                                picker=8, edgecolors="#555555", linewidths=0.5,
+                                label=f"Active listings ({len(prop_dots)})")
+                self._dot_props[sc] = prop_dots
+
+            # ── Axis padding so sparse data isn't crammed in a corner ────────
+            from datetime import timedelta as _td
+            all_x = dates + ([d["x"] for d in prop_dots] if prop_dots else [])
+            all_y = values + ([d["y"] for d in prop_dots] if prop_dots else [])
+            if all_x:
+                x_lo, x_hi = min(all_x), max(all_x)
+                span = x_hi - x_lo if x_hi != x_lo else _td(days=1)
+                x_pad = max(_td(days=1), span * 0.05)
+                ax.set_xlim(x_lo - x_pad, x_hi + x_pad)
+            if all_y:
+                y_lo, y_hi = min(all_y), max(all_y)
+                y_margin = max(1.0, (y_hi - y_lo) * 0.15) if y_hi != y_lo else max(1.0, y_hi * 0.10)
+                ax.set_ylim(y_lo - y_margin, y_hi + y_margin)
+
+            # Axes formatting
+            ax.xaxis.set_major_formatter(mdates.DateFormatter("%d %b '%y"))
+            ax.xaxis.set_major_locator(mdates.AutoDateLocator())
+            fig.autofmt_xdate(rotation=30)
+            ax.set_ylabel("€/m²", color="#e8e8e8")
+            ax.set_xlabel("Date", color="#e8e8e8")
+            ax.tick_params(colors="#888888")
+            ax.spines[:].set_color("#333333")
+            ax.legend(facecolor="#2b2b2b", labelcolor="#e8e8e8",
+                      framealpha=0.8, fontsize=8)
+
+            canvas = FigureCanvasQTAgg(fig)
+            layout.addWidget(canvas)
+
+            if prop_dots:
+                hint = _dim_label(
+                    "Click a dot to open the property gallery  •  orange = >10 % below latest avg"
+                )
+                hint.setAlignment(Qt.AlignmentFlag.AlignCenter)
+                layout.addWidget(hint)
+
+                def _on_pick(event) -> None:
+                    artist = event.artist
+                    if artist not in self._dot_props:
+                        return
+                    idx = event.ind[0]
+                    prop = self._dot_props[artist][idx]["prop"]
+                    gw = GalleryWindow(self, prop, self._controller)
+                    gw.exec()
+
+                fig.canvas.mpl_connect("pick_event", _on_pick)
+
+        except ImportError:
+            layout.addWidget(_dim_label(
+                "matplotlib is not installed. Run:  pip install matplotlib"
+            ))
+
+
+# ── Active Listings History Chart ──────────────────────────────────────────────
+
+class ListingsFoundChartDialog(QDialog):
+    """Line chart of active listing counts over time, sourced from scrape_runs.
+
+    Multiple runs on the same day are averaged.
+    Long histories are binned automatically (day / week / month).
+    """
+
+    def __init__(self, parent: QWidget, search_name: str,
+                 search_id: int | None, controller) -> None:
+        super().__init__(parent)
+        self.setWindowTitle(f"Active Listings History — {search_name}")
+        self.resize(960, 500)
+        self.setMinimumSize(500, 300)
+        _set_dark_titlebar(self)
+
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(8, 8, 8, 8)
+
+        runs: list[dict] = []
+        if controller and search_id is not None:
+            runs = controller.get_scrape_history(search_id, limit=365)
+
+        if not runs:
+            layout.addWidget(_dim_label("No scrape runs yet for this search."))
+            return
+
+        try:
+            from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg
+            from matplotlib.figure import Figure
+            import matplotlib.dates as mdates
+            from datetime import datetime
+
+            # Build raw series oldest-first; prefer active_count, fall back to records_found
+            raw_dates: list[datetime] = []
+            raw_values: list[float]   = []
+            for r in reversed(runs):
+                try:
+                    raw_dates.append(datetime.strptime(r["run_date"][:16], "%Y-%m-%d %H:%M"))
+                    v = r.get("active_count")
+                    if v is None:
+                        v = r.get("records_found", 0)
+                    raw_values.append(float(v))
+                except (ValueError, TypeError):
+                    pass
+
+            dates, values = _bin_series(raw_dates, raw_values, bin_by="auto")
+
+            if not dates:
+                layout.addWidget(_dim_label("No valid data to display."))
+                return
+
+            fig = Figure(figsize=(9.5, 4.5), tight_layout=True, facecolor="#1e1e1e")
+            ax  = fig.add_subplot(111)
+            ax.set_facecolor("#2b2b2b")
+
+            # Line + markers (no fill_between — it fills from y=0 and looks wrong
+            # with only a few data points)
+            ax.plot(dates, values, color="#0d7aff", linewidth=2.0, marker="o",
+                    markersize=6, label="Active listings", zorder=2)
+
+            # Rolling trend line (only meaningful with 3+ points)
+            if len(values) >= 3:
+                win = min(7, len(values))
+                roll = _rolling_avg(values, win)
+                ax.plot(dates, roll, color="#4caf50", linewidth=1.8,
+                        linestyle="--", alpha=0.9, label=f"{win}-pt trend", zorder=3)
+
+            # Annotate latest point
+            ax.annotate(f"{values[-1]:.0f}",
+                        xy=(dates[-1], values[-1]),
+                        xytext=(0, 10), textcoords="offset points",
+                        ha="center", color="#ffffff", fontsize=9)
+
+            # ── Axis padding so a single point isn't crammed in a corner ─────
+            from datetime import timedelta
+            if len(dates) == 1:
+                # Single point: centre it with ±1 day x-margin and ±10 % y-margin
+                ax.set_xlim(dates[0] - timedelta(days=1), dates[0] + timedelta(days=1))
+            else:
+                span = dates[-1] - dates[0]
+                pad = max(timedelta(days=1), span * 0.05)
+                ax.set_xlim(dates[0] - pad, dates[-1] + pad)
+
+            if values:
+                lo, hi = min(values), max(values)
+                margin = max(1.0, (hi - lo) * 0.15) if hi != lo else max(1.0, hi * 0.15)
+                ax.set_ylim(max(0, lo - margin), hi + margin)
+
+            ax.xaxis.set_major_formatter(mdates.DateFormatter("%d %b '%y"))
+            ax.xaxis.set_major_locator(mdates.AutoDateLocator())
+            fig.autofmt_xdate(rotation=30)
+            ax.set_ylabel("Active listings", color="#e8e8e8")
+            ax.set_xlabel("Date", color="#e8e8e8")
+            ax.tick_params(colors="#888888")
+            ax.spines[:].set_color("#333333")
+            ax.legend(facecolor="#2b2b2b", labelcolor="#e8e8e8",
+                      framealpha=0.8, fontsize=8)
+
+            canvas = FigureCanvasQTAgg(fig)
+            layout.addWidget(canvas)
+
+        except ImportError:
+            layout.addWidget(_dim_label(
+                "matplotlib is not installed. Run:  pip install matplotlib"
+            ))
+
+
 
 class ImotScraperMainWindow(QMainWindow):
     """
@@ -671,7 +1096,6 @@ class ImotScraperMainWindow(QMainWindow):
         _set_dark_titlebar(self)
 
         self._search_ids:     dict[str, int] = {}   # search_name → DB id
-        self._gallery_win:    Optional[GalleryWindow] = None
         self._scraper_thread: Optional[threading.Thread] = None
         self._scheduler_running = False
 
@@ -972,14 +1396,13 @@ class ImotScraperMainWindow(QMainWindow):
             self.controller.get_properties_for_search(search_name)
             if self.controller else []
         )
-        win = ResultsWindow(self, search_name, props, self.controller)
+        search_id = self._search_ids.get(search_name)
+        win = ResultsWindow(self, search_name, props, self.controller, search_id=search_id)
         win.exec()
 
     def _open_gallery(self, prop: dict) -> None:
-        if self._gallery_win and not self._gallery_win.isHidden():
-            self._gallery_win.close()
-        self._gallery_win = GalleryWindow(self, prop, self.controller)
-        self._gallery_win.show()
+        gw = GalleryWindow(self, prop, self.controller)
+        gw.exec()
 
     # ── Feed ──────────────────────────────────────────────────────────────────
 
