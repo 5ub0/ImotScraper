@@ -157,7 +157,8 @@ class _ListDelegate(QStyledItemDelegate):
 
 class FeedBridge(QObject):
     """Emits feed events (dict) on the Qt main thread via a signal."""
-    event_received = pyqtSignal(dict)
+    event_received  = pyqtSignal(dict)
+    search_progress = pyqtSignal(str)   # emits search_name when scraper starts each search
 
 
 class ResultsFeedHandler(logging.Handler):
@@ -170,8 +171,9 @@ class ResultsFeedHandler(logging.Handler):
       "Price change: <title> <old> → <new>"
     """
 
-    _RE_NEW     = re.compile(r"New listing: (.+?) \| price: (.+?) \| search: (.+?) \| (https?://\S+)")
-    _RE_CHANGED = re.compile(r"Price change: (.+?) (\S+) → (\S+) \| search: (.+)")
+    _RE_NEW        = re.compile(r"New listing: (.+?) \| price: (.+?) \| search: (.+?) \| (https?://\S+)")
+    _RE_CHANGED    = re.compile(r"Price change: (.+?) (\S+) → (\S+) \| search: (.+)")
+    _RE_PROCESSING = re.compile(r"Processing: (.+)")
 
     def __init__(self, bridge: FeedBridge) -> None:
         super().__init__()
@@ -199,6 +201,10 @@ class ResultsFeedHandler(logging.Handler):
                 "search_name": m.group(4).strip(),
                 "link":        "",
             })
+            return
+        m = self._RE_PROCESSING.search(msg)
+        if m:
+            self._bridge.search_progress.emit(m.group(1).strip())
 
 
 # ── Add / Edit Search dialog ───────────────────────────────────────────────────
@@ -308,9 +314,6 @@ class GalleryWindow(QDialog):
         self.resize(880, 800)
         self.setMinimumSize(600, 500)
         _set_dark_titlebar(self)
-        self.setWindowFlags(
-            self.windowFlags() | Qt.WindowType.WindowStaysOnTopHint
-        )
 
         self._prop       = prop
         self._controller = controller
@@ -672,6 +675,7 @@ class ImotScraperMainWindow(QMainWindow):
         # Feed bridge: log handler → Qt signal → slot on main thread
         self._feed_bridge = FeedBridge()
         self._feed_bridge.event_received.connect(self._append_feed_row)
+        self._feed_bridge.search_progress.connect(self._on_search_progress)
         self._feed_link_map: dict[int, str] = {}   # feed table row → link
 
         self._feed_handler = ResultsFeedHandler(self._feed_bridge)
@@ -860,7 +864,7 @@ class ImotScraperMainWindow(QMainWindow):
         if not self.controller:
             return
         for s in self.controller.get_all_searches():
-            btn = _styled_btn(f"Properties: {s['search_name']}", style="purple", min_width=0)
+            btn = _styled_btn(s['search_name'], style="purple", min_width=0)
             name = s["search_name"]
             btn.clicked.connect(lambda _checked, n=name: self._open_results(n))
             self._view_btn_layout.addWidget(btn)
@@ -1110,6 +1114,11 @@ class ImotScraperMainWindow(QMainWindow):
 
     # ── Scraping ──────────────────────────────────────────────────────────────
 
+    def _on_search_progress(self, search_name: str) -> None:
+        """Update status label with the currently running search name."""
+        self._status_lbl.setText(f"  ⏳  Scraping: {search_name}")
+        self._status_lbl.setStyleSheet(f"color: {T.YELLOW}; font-size: 12px;")
+
     def start_scraping(self) -> None:
         if self._scheduler_running:
             QMessageBox.warning(
@@ -1132,8 +1141,7 @@ class ImotScraperMainWindow(QMainWindow):
         self._feed_table.clearContents()
         self._feed_table.setRowCount(0)
         self._feed_link_map.clear()
-        names = "  |  ".join(s["search_name"] for s in searches)
-        self._status_lbl.setText(f"  ⏳  Running: {names}")
+        self._status_lbl.setText(f"  ⏳  Starting scrape…")
         self._status_lbl.setStyleSheet(f"color: {T.YELLOW}; font-size: 12px;")
         self._status_counts_lbl.setText("")
 
