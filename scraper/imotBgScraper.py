@@ -69,6 +69,14 @@ class ImotScraper:
             # round-trip per listing inside the loop.
             known = self._load_known_prices(search_id)
 
+            # Snapshot which record_ids are Active RIGHT NOW (before the scrape loop)
+            # so we can later distinguish truly-new inactivations from ones that were
+            # already Inactive in a previous run.
+            known_active_before: set[str] = {
+                p["record_id"]
+                for p in self.db.get_properties(search_id, status="Active")
+            }
+
             page = 1
             while True:
                 soup = self._process_page(session, base_url, page)
@@ -139,14 +147,18 @@ class ImotScraper:
             # Mark anything not seen this run as Inactive
             inactive_count = self.db.mark_inactive(search_id, active_record_ids)
 
-            # Emit a feed log line for each newly inactivated listing
-            active_set = set(active_record_ids)
-            for rid, (price, title, location) in known.items():
-                if rid not in active_set:
-                    link = self.db.get_link_for_record(rid, search_id)
-                    self.logger.info(
-                        f"Removed listing: {title or rid} | search: {search_name} | {link or ''}"
-                    )
+            # Emit a feed log line only for listings that were Active BEFORE this run
+            # and are now gone — skip ones that were already Inactive from a previous run.
+            # known_active_before was captured before the scrape loop started.
+            if inactive_count > 0:
+                active_set = set(active_record_ids)
+                for rid in known_active_before:
+                    if rid not in active_set:
+                        price, title, location = known[rid]
+                        link = self.db.get_link_for_record(rid, search_id)
+                        self.logger.info(
+                            f"Removed listing: {title or rid} | search: {search_name} | {link or ''}"
+                        )
 
             # Record area avg snapshot for this search after the run
             self.db.record_area_stats_snapshot(search_id)

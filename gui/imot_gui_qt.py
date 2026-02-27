@@ -205,7 +205,7 @@ class ResultsFeedHandler(logging.Handler):
         m = self._RE_DELETED.search(msg)
         if m:
             self._bridge.event_received.emit({
-                "kind":        "DELETED",
+                "kind":        "DEACTIVATED",
                 "title":       m.group(1).strip(),
                 "price":       "—",
                 "search_name": m.group(2).strip(),
@@ -552,7 +552,7 @@ class ResultsWindow(QDialog):
 
         # Table
         cols = ["Status", "Title", "Location", "Price", "€/m²",
-                "First Seen", "Last Seen", "Inactive At", "Images", "Link"]
+                "First Seen", "Deactivated At", "Days on Market", "Images", "Link"]
         self._table = QTableWidget(0, len(cols))
         self._table.setHorizontalHeaderLabels(cols)
         self._table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Interactive)
@@ -567,7 +567,7 @@ class ResultsWindow(QDialog):
         self._table.setShowGrid(True)
 
         # Column widths (0=Status, 1=Title, 2=Location, 3=Price, 4=€/m², 5=First Seen,
-        #                6=Last Seen, 7=Inactive At, 8=Images, 9=Link)
+        #                6=Deactivated At, 7=Days on Market, 8=Images, 9=Link)
         self._table.setColumnWidth(0, 80)
         self._table.setColumnWidth(1, 220)
         self._table.setColumnWidth(2, 180)
@@ -575,7 +575,7 @@ class ResultsWindow(QDialog):
         self._table.setColumnWidth(4, 90)
         self._table.setColumnWidth(5, 130)
         self._table.setColumnWidth(6, 130)
-        self._table.setColumnWidth(7, 130)
+        self._table.setColumnWidth(7, 110)
         self._table.setColumnWidth(8, 60)
 
         # Fetch latest area avg for underpriced highlighting
@@ -620,8 +620,12 @@ class ResultsWindow(QDialog):
         self._table.cellClicked.connect(self._on_click)
 
     def _populate(self, properties: list[dict], controller) -> None:
+        from datetime import datetime, date
+
         db = controller.db if controller else None
         self._table.setSortingEnabled(False)   # must stay off while inserting
+
+        today = date.today()
 
         for prop in properties:
             ph = db.get_price_history(prop["id"]) if db else []
@@ -637,7 +641,26 @@ class ResultsWindow(QDialog):
             self._table.insertRow(row_idx)
             self._table.setRowHeight(row_idx, T.ROW_H)
 
-            sqm_val   = prop.get("price_per_sqm") or "—"
+            sqm_val = prop.get("price_per_sqm") or "—"
+            is_active = (prop["status"] == "Active")
+
+            # ── Days on Market ─────────────────────────────────────────────
+            # Active  : today − first_seen
+            # Inactive: inactivated_at − first_seen  (fallback: last_seen − first_seen)
+            dom_str = "—"
+            fs_raw = prop.get("first_seen")
+            if fs_raw:
+                try:
+                    fs_date = datetime.strptime(fs_raw[:10], "%Y-%m-%d").date()
+                    if is_active:
+                        dom_str = str((today - fs_date).days)
+                    else:
+                        end_raw = prop.get("inactivated_at") or prop.get("last_seen")
+                        if end_raw:
+                            end_date = datetime.strptime(end_raw[:10], "%Y-%m-%d").date()
+                            dom_str = str((end_date - fs_date).days)
+                except (ValueError, TypeError):
+                    pass
 
             cells = [
                 prop["status"],
@@ -646,13 +669,11 @@ class ResultsWindow(QDialog):
                 current_price,
                 sqm_val,
                 prop["first_seen"][:16] if prop.get("first_seen") else "—",
-                prop["last_seen"][:16]  if prop.get("last_seen")  else "—",
                 prop["inactivated_at"][:16] if prop.get("inactivated_at") else "—",
+                dom_str,
                 img_label,
                 prop.get("link") or "—",
             ]
-
-            is_active = (prop["status"] == "Active")
 
             # Determine if this row is underpriced (active only; needs numeric sqm)
             is_underpriced = False
@@ -686,7 +707,6 @@ class ResultsWindow(QDialog):
                     if col in (0, 4, 5, 6, 7, 8)
                     else Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft
                 )
-                # Store enriched prop on the Status cell (col 0) for retrieval
                 if col == 0:
                     item.setData(Qt.ItemDataRole.UserRole, enriched)
                 self._table.setItem(row_idx, col, item)
@@ -1437,9 +1457,9 @@ class ImotScraperMainWindow(QMainWindow):
 
         # Pick colours
         bg_map = {
-            "NEW":     T.FEED_NEW_BG,
-            "CHANGED": T.FEED_CHANGED_BG,
-            "DELETED": T.FEED_DELETED_BG,
+            "NEW":         T.FEED_NEW_BG,
+            "CHANGED":     T.FEED_CHANGED_BG,
+            "DEACTIVATED": T.FEED_DELETED_BG,
         }
         bg_color = QColor(bg_map.get(kind, T.BG2))
         fg_color = QColor(T.FG_WHITE)

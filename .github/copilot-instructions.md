@@ -169,6 +169,7 @@ Both use `matplotlib` with `backend_qtagg`, lazy-imported inside `__init__`.
 ### Log panel
 - `ResultsFeedHandler` intercepts `logging.INFO` lines that match the scraper feed patterns.
 - Regexes: `_RE_NEW` (4 groups), `_RE_CHANGED` (5 groups, group 5 = link), `_RE_DELETED` (3 groups, group 3 = link, uses `\S*` not `\S+` to tolerate empty link).
+- `_RE_DELETED` emits `kind="DEACTIVATED"` — the feed colour map key is `"DEACTIVATED": T.FEED_DELETED_BG`.
 - All other log output goes to a `QTextEdit` log panel via a standard `logging.Handler`.
 - Use `logger.debug` for anything that should not appear in the GUI log panel.
 
