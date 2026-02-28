@@ -151,3 +151,59 @@ class AppController:
     def get_scrape_history(self, search_id: int, limit: int = 365):
         """Return scrape run rows for a search, newest first."""
         return self.db.get_scrape_history(search_id, limit) if self.db else []
+
+    def backup_database(self) -> str | None:
+        """
+        Create a timestamped local backup and upload a copy to Google Drive
+        (Drive upload is best-effort; local backup always happens).
+        Keeps 7 local copies and 1 on Drive.
+        Returns the local backup file path, or None on failure.
+        """
+        if not self.db:
+            self.logger.warning("backup_database: no database available")
+            return None
+        try:
+            return self.db.backup(keep_local=7, keep_drive=1)
+        except Exception as e:
+            self.logger.error(f"Database backup failed: {e}", exc_info=True)
+            return None
+
+    def list_backups(self) -> list[dict]:
+        """
+        Return all available backups: local first (newest first),
+        then Google Drive entries.
+        Each dict has: name, size, modified_time, source ('local' or 'gdrive'),
+        and either path (local) or drive_id (gdrive).
+        """
+        if not self.db:
+            return []
+        local  = self.db.list_local_backups()
+        gdrive = self.db.gdrive_list_backups()
+        return local + gdrive
+
+    def restore_database(self, source: str, path: str | None = None,
+                         drive_id: str | None = None) -> bool:
+        """
+        Restore the database from a local file or a Google Drive backup.
+        *source* must be 'local' or 'gdrive'.
+        For 'local' supply *path*; for 'gdrive' supply *drive_id*.
+        Returns True on success.
+        """
+        if not self.db:
+            self.logger.error("restore_database: no database available")
+            return False
+        try:
+            if source == "gdrive":
+                if not drive_id:
+                    raise ValueError("drive_id required for gdrive restore")
+                local_path = self.db.gdrive_download_backup(drive_id)
+                if not local_path:
+                    raise RuntimeError("Failed to download backup from Google Drive")
+                path = local_path
+            if not path:
+                raise ValueError("path required for local restore")
+            self.db.restore_from_backup(path)
+            return True
+        except Exception as exc:
+            self.logger.error(f"restore_database failed: {exc}", exc_info=True)
+            return False

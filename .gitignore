@@ -1,5 +1,6 @@
 data/
 dist/data/
+dist/.tmp.driveupload/
 build/
 __pycache__/
 .env

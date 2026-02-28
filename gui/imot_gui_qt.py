@@ -1259,6 +1259,11 @@ class ImotScraperMainWindow(QMainWindow):
         self._history_btn.clicked.connect(self._open_run_history)
         status_layout.addWidget(self._history_btn)
 
+        self._restore_btn = _styled_btn("⏪  Restore DB", min_width=0)
+        self._restore_btn.setFixedHeight(26)
+        self._restore_btn.clicked.connect(self._open_restore_dialog)
+        status_layout.addWidget(self._restore_btn)
+
         lower_layout.addWidget(status_bar)
 
         # Feed table
@@ -1642,12 +1647,23 @@ class ImotScraperMainWindow(QMainWindow):
         logging.info(f"Scraping completed — {n_new} new, {n_chg} changed.")
         self._run_btn.setEnabled(True)
         self._run_btn.setText("▶  Run Scraping Now")
+
+        if success and self.controller:
+            backup_path = self.controller.backup_database()
+            if backup_path:
+                logging.debug(f"Auto-backup created: {backup_path}")
+
         self._refresh()
 
     # ── Run history ───────────────────────────────────────────────────────────
 
     def _open_run_history(self) -> None:
         dlg = RunHistoryDialog(self, self.controller)
+        _set_dark_titlebar(dlg)
+        dlg.exec()
+
+    def _open_restore_dialog(self) -> None:
+        dlg = RestoreDialog(self, self.controller)
         _set_dark_titlebar(dlg)
         dlg.exec()
 
@@ -1678,6 +1694,195 @@ class ImotScraperMainWindow(QMainWindow):
 
 
 # ── Run History dialog ────────────────────────────────────────────────────────
+
+class RestoreDialog(QDialog):
+    """
+    Shows available database backups (local + Google Drive) and lets the
+    user restore the database from any of them.
+    After a successful restore the application restarts automatically.
+    """
+
+    _COLS = ["Source", "File name", "Size", "Date"]
+
+    def __init__(self, parent: QWidget, controller) -> None:
+        super().__init__(parent)
+        self._controller = controller
+        self.setWindowTitle("Restore Database")
+        self.setMinimumSize(760, 380)
+        _set_dark_titlebar(self)
+
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(10, 10, 10, 10)
+        layout.setSpacing(8)
+
+        # Info label
+        info = QLabel(
+            "Select a backup to restore from.  "
+            "<b>This will overwrite the current database</b> — "
+            "a backup of the current state is created first."
+        )
+        info.setWordWrap(True)
+        info.setStyleSheet(f"color: {T.FG_DIM}; font-size: 11px;")
+        layout.addWidget(info)
+
+        # Table
+        self._table = QTableWidget(0, len(self._COLS))
+        self._table.setHorizontalHeaderLabels(self._COLS)
+        hdr = self._table.horizontalHeader()
+        hdr.setSectionResizeMode(0, QHeaderView.ResizeMode.Fixed)     # Source
+        hdr.setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)   # Name
+        hdr.setSectionResizeMode(2, QHeaderView.ResizeMode.Fixed)     # Size
+        hdr.setSectionResizeMode(3, QHeaderView.ResizeMode.Fixed)     # Date
+        self._table.setColumnWidth(0, 80)
+        self._table.setColumnWidth(2, 90)
+        self._table.setColumnWidth(3, 148)
+        self._table.verticalHeader().setVisible(False)
+        self._table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
+        self._table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
+        self._table.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
+        self._table.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
+        self._table.setAlternatingRowColors(False)
+        self._table.itemSelectionChanged.connect(self._on_selection)
+        layout.addWidget(self._table, stretch=1)
+
+        # Bottom bar
+        btn_row = QHBoxLayout()
+        btn_row.setContentsMargins(0, 0, 0, 0)
+
+        self._refresh_btn = _styled_btn("🔄  Refresh", min_width=100)
+        self._refresh_btn.clicked.connect(self._load)
+        btn_row.addWidget(self._refresh_btn)
+
+        btn_row.addStretch()
+
+        close_btn = _styled_btn("Close", min_width=80)
+        close_btn.clicked.connect(self.reject)
+        btn_row.addWidget(close_btn)
+
+        self._restore_btn = _styled_btn("⏪  Restore Selected", style="green", min_width=160)
+        self._restore_btn.setEnabled(False)
+        self._restore_btn.clicked.connect(self._do_restore)
+        btn_row.addWidget(self._restore_btn)
+
+        layout.addLayout(btn_row)
+
+        # Backup metadata stored per row
+        self._backups: list[dict] = []
+        self._load()
+
+    def _load(self) -> None:
+        self._refresh_btn.setEnabled(False)
+        self._table.setRowCount(0)
+        self._backups = []
+        try:
+            backups = self._controller.list_backups() if self._controller else []
+        except Exception as exc:
+            logging.error(f"RestoreDialog: failed to list backups: {exc}")
+            backups = []
+
+        self._backups = backups
+        self._table.setSortingEnabled(False)
+        self._table.setRowCount(len(backups))
+        for row, b in enumerate(backups):
+            source = b.get("source", "local")
+            name   = b.get("name", "")
+            size   = b.get("size")
+            mtime  = b.get("modified_time", "")
+
+            size_str = f"{size / 1024 / 1024:.1f} MB" if size else "—"
+            mtime_str = mtime[:16] if mtime else "—"
+
+            bg = QColor(T.BG2)
+            fg = QColor(T.FG_WHITE)
+
+            source_item = QTableWidgetItem("☁ Drive" if source == "gdrive" else "💾 Local")
+            source_item.setForeground(QBrush(QColor(T.ACCENT) if source == "gdrive" else fg))
+            source_item.setBackground(QBrush(bg))
+
+            for col, text in enumerate([None, name, size_str, mtime_str]):
+                item = QTableWidgetItem(text or "")
+                item.setForeground(QBrush(fg))
+                item.setBackground(QBrush(bg))
+                if col == 2:
+                    item.setTextAlignment(Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignRight)
+                self._table.setItem(row, col, item)
+            self._table.setItem(row, 0, source_item)
+
+        self._table.setSortingEnabled(True)
+        self._refresh_btn.setEnabled(True)
+        self._restore_btn.setEnabled(False)
+
+    def _on_selection(self) -> None:
+        self._restore_btn.setEnabled(bool(self._table.selectedItems()))
+
+    def _do_restore(self) -> None:
+        rows = self._table.selectionModel().selectedRows()
+        if not rows:
+            return
+        idx = rows[0].row()
+        if idx >= len(self._backups):
+            return
+        b = self._backups[idx]
+        name = b.get("name", "unknown")
+
+        confirm = QMessageBox(self)
+        confirm.setWindowTitle("Confirm Restore")
+        confirm.setIcon(QMessageBox.Icon.Warning)
+        confirm.setText(
+            f"<b>Restore from:</b><br>{name}<br><br>"
+            "The current database will be backed up first, then replaced.<br>"
+            "The application will restart automatically."
+        )
+        confirm.setStandardButtons(
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.Cancel
+        )
+        confirm.setDefaultButton(QMessageBox.StandardButton.Cancel)
+        if confirm.exec() != QMessageBox.StandardButton.Yes:
+            return
+
+        # Back up current DB before overwriting
+        try:
+            if self._controller:
+                self._controller.backup_database()
+        except Exception:
+            pass
+
+        self._restore_btn.setEnabled(False)
+        self._refresh_btn.setEnabled(False)
+
+        ok = self._controller.restore_database(
+            source   = b.get("source", "local"),
+            path     = b.get("path"),
+            drive_id = b.get("drive_id"),
+        ) if self._controller else False
+
+        if ok:
+            QMessageBox.information(
+                self, "Restore Complete",
+                "Database restored successfully.\nThe application will now restart."
+            )
+            self.accept()
+            # Restart: frozen exe → relaunch the exe; dev → relaunch main.py
+            import sys
+            import subprocess
+            if getattr(sys, "frozen", False):
+                # Running as PyInstaller exe — re-exec the exe itself
+                cmd = [sys.executable]
+            else:
+                # Running from source — re-exec python main.py
+                import os
+                main_py = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "main.py")
+                cmd = [sys.executable, os.path.normpath(main_py)]
+            subprocess.Popen(cmd)
+            QApplication.quit()
+        else:
+            QMessageBox.critical(
+                self, "Restore Failed",
+                "The restore operation failed.\nSee the log for details."
+            )
+            self._restore_btn.setEnabled(True)
+            self._refresh_btn.setEnabled(True)
+
 
 class RunHistoryDialog(QDialog):
     """

@@ -668,6 +668,277 @@ class DatabaseManager:
             return [dict(r) for r in rows]
 
     # ------------------------------------------------------------------
+    # Backup & Restore
+    # ------------------------------------------------------------------
+
+    _BACKUP_PREFIX = "imot_scraper_"
+    _BACKUP_SUFFIX = ".db"
+    _GDRIVE_FOLDER_NAME = "ImotScraperBackups"
+
+    def _backup_dir(self) -> str:
+        return os.path.join(os.path.dirname(os.path.abspath(self.db_path)), "backups")
+
+    def _gdrive_creds_path(self) -> str:
+        return os.path.join(os.path.dirname(os.path.abspath(self.db_path)), "gdrive_credentials.json")
+
+    def _gdrive_token_path(self) -> str:
+        return os.path.join(os.path.dirname(os.path.abspath(self.db_path)), "gdrive_token.json")
+
+    def _gdrive_service(self):
+        """
+        Return an authenticated Google Drive service, or None if credentials
+        are not configured.  Uses OAuth2 with a token cached in
+        data/gdrive_token.json.  On first run (or if the token expires) a
+        browser window is opened for the user to grant access.
+        """
+        try:
+            from google.oauth2.credentials import Credentials
+            from google_auth_oauthlib.flow import InstalledAppFlow
+            from google.auth.transport.requests import Request
+            from googleapiclient.discovery import build
+
+            SCOPES = ["https://www.googleapis.com/auth/drive.file"]
+            creds_path  = self._gdrive_creds_path()
+            token_path  = self._gdrive_token_path()
+
+            if not os.path.exists(creds_path):
+                logger.debug("GDrive: credentials file not found — Drive upload disabled.")
+                return None
+
+            creds = None
+            if os.path.exists(token_path):
+                creds = Credentials.from_authorized_user_file(token_path, SCOPES)
+
+            if not creds or not creds.valid:
+                if creds and creds.expired and creds.refresh_token:
+                    creds.refresh(Request())
+                else:
+                    flow = InstalledAppFlow.from_client_secrets_file(creds_path, SCOPES)
+                    creds = flow.run_local_server(port=0)
+                with open(token_path, "w") as fh:
+                    fh.write(creds.to_json())
+
+            return build("drive", "v3", credentials=creds)
+        except Exception as exc:
+            logger.warning(f"GDrive: could not create service: {exc}")
+            return None
+
+    def _gdrive_get_or_create_folder(self, service) -> str | None:
+        """Return the Drive folder ID for _GDRIVE_FOLDER_NAME, creating it if needed."""
+        try:
+            resp = service.files().list(
+                q=f"name='{self._GDRIVE_FOLDER_NAME}' and mimeType='application/vnd.google-apps.folder' and trashed=false",
+                fields="files(id)",
+            ).execute()
+            files = resp.get("files", [])
+            if files:
+                return files[0]["id"]
+            meta = {
+                "name": self._GDRIVE_FOLDER_NAME,
+                "mimeType": "application/vnd.google-apps.folder",
+            }
+            folder = service.files().create(body=meta, fields="id").execute()
+            return folder["id"]
+        except Exception as exc:
+            logger.warning(f"GDrive: could not get/create folder: {exc}")
+            return None
+
+    def _gdrive_upload(self, backup_path: str, keep: int = 1) -> bool:
+        """
+        Upload *backup_path* to the ImotScraperBackups Drive folder.
+        Keeps only the newest *keep* backup(s) on Drive; older ones are deleted.
+        Returns True on success.
+        """
+        try:
+            from googleapiclient.http import MediaFileUpload
+
+            service = self._gdrive_service()
+            if service is None:
+                return False
+
+            folder_id = self._gdrive_get_or_create_folder(service)
+            if folder_id is None:
+                return False
+
+            filename = os.path.basename(backup_path)
+            media    = MediaFileUpload(backup_path, mimetype="application/x-sqlite3", resumable=False)
+            meta     = {"name": filename, "parents": [folder_id]}
+            service.files().create(body=meta, media_body=media, fields="id").execute()
+            logger.info(f"GDrive: uploaded {filename}")
+
+            # Rotate — keep only newest *keep* files in the folder
+            resp = service.files().list(
+                q=f"'{folder_id}' in parents and trashed=false and name contains '{self._BACKUP_PREFIX}'",
+                fields="files(id, name, createdTime)",
+                orderBy="createdTime desc",
+            ).execute()
+            all_drive = resp.get("files", [])
+            for old in all_drive[keep:]:
+                service.files().delete(fileId=old["id"]).execute()
+                logger.debug(f"GDrive: deleted old backup {old['name']}")
+
+            return True
+        except Exception as exc:
+            logger.warning(f"GDrive: upload failed: {exc}")
+            return False
+
+    def gdrive_list_backups(self) -> List[Dict]:
+        """
+        Return list of backup dicts stored on Google Drive.
+        Each dict has: name, size (int bytes or None), modified_time (str), drive_id (str).
+        Returns [] if Drive is not configured or unreachable.
+        """
+        try:
+            service = self._gdrive_service()
+            if service is None:
+                return []
+            folder_id = self._gdrive_get_or_create_folder(service)
+            if folder_id is None:
+                return []
+            resp = service.files().list(
+                q=f"'{folder_id}' in parents and trashed=false and name contains '{self._BACKUP_PREFIX}'",
+                fields="files(id, name, size, modifiedTime)",
+                orderBy="createdTime desc",
+            ).execute()
+            results = []
+            for f in resp.get("files", []):
+                results.append({
+                    "name":          f.get("name", ""),
+                    "size":          int(f["size"]) if f.get("size") else None,
+                    "modified_time": f.get("modifiedTime", ""),
+                    "drive_id":      f["id"],
+                    "source":        "gdrive",
+                })
+            return results
+        except Exception as exc:
+            logger.warning(f"GDrive: could not list backups: {exc}")
+            return []
+
+    def gdrive_download_backup(self, drive_id: str, dest_dir: str | None = None) -> str | None:
+        """
+        Download a backup from Drive by its file ID into *dest_dir*
+        (defaults to the local backups folder).  Returns the local path.
+        """
+        try:
+            import io
+            from googleapiclient.http import MediaIoBaseDownload
+
+            service = self._gdrive_service()
+            if service is None:
+                return None
+
+            meta = service.files().get(fileId=drive_id, fields="name").execute()
+            filename = meta["name"]
+            target_dir = dest_dir or self._backup_dir()
+            os.makedirs(target_dir, exist_ok=True)
+            dest_path = os.path.join(target_dir, filename)
+
+            request = service.files().get_media(fileId=drive_id)
+            buf = io.FileIO(dest_path, "wb")
+            downloader = MediaIoBaseDownload(buf, request)
+            done = False
+            while not done:
+                _, done = downloader.next_chunk()
+            buf.close()
+            logger.info(f"GDrive: downloaded {filename} to {dest_path}")
+            return dest_path
+        except Exception as exc:
+            logger.warning(f"GDrive: download failed: {exc}")
+            return None
+
+    def backup(self, backup_dir: str = None, keep_local: int = 7, keep_drive: int = 1) -> str:
+        """
+        Create a timestamped local backup using SQLite's online backup API
+        (safe while the DB is open in WAL mode), then upload a copy to
+        Google Drive (if credentials are configured).
+
+        Local:  keeps newest *keep_local* files  (default 7).
+        Drive:  keeps newest *keep_drive* files  (default 1).
+
+        Returns the path of the newly created local backup file.
+        """
+        target_dir = backup_dir if backup_dir else self._backup_dir()
+        os.makedirs(target_dir, exist_ok=True)
+
+        timestamp   = datetime.now().strftime("%Y%m%d_%H%M%S")
+        backup_path = os.path.join(target_dir, f"{self._BACKUP_PREFIX}{timestamp}{self._BACKUP_SUFFIX}")
+
+        src_conn = self._get_connection()
+        dst_conn = sqlite3.connect(backup_path)
+        try:
+            src_conn.backup(dst_conn)
+        finally:
+            dst_conn.close()
+
+        logger.info(f"Database backed up to: {backup_path}")
+
+        # Rotate local backups
+        all_local = sorted(
+            f for f in os.listdir(target_dir)
+            if f.startswith(self._BACKUP_PREFIX) and f.endswith(self._BACKUP_SUFFIX)
+        )
+        for old_file in all_local[:-keep_local]:
+            try:
+                os.remove(os.path.join(target_dir, old_file))
+                logger.debug(f"Removed old local backup: {old_file}")
+            except OSError as exc:
+                logger.warning(f"Could not remove old backup {old_file}: {exc}")
+
+        # Upload to Drive (best-effort — never raises)
+        self._gdrive_upload(backup_path, keep=keep_drive)
+
+        return backup_path
+
+    def list_local_backups(self) -> List[Dict]:
+        """
+        Return local backup files sorted newest-first.
+        Each dict has: name, path, size (bytes), modified_time (str), source='local'.
+        """
+        target_dir = self._backup_dir()
+        if not os.path.isdir(target_dir):
+            return []
+        results = []
+        for fname in sorted(os.listdir(target_dir), reverse=True):
+            if fname.startswith(self._BACKUP_PREFIX) and fname.endswith(self._BACKUP_SUFFIX):
+                full = os.path.join(target_dir, fname)
+                stat = os.stat(full)
+                results.append({
+                    "name":          fname,
+                    "path":          full,
+                    "size":          stat.st_size,
+                    "modified_time": datetime.fromtimestamp(stat.st_mtime).strftime("%Y-%m-%d %H:%M:%S"),
+                    "source":        "local",
+                })
+        return results
+
+    def restore_from_backup(self, backup_path: str) -> None:
+        """
+        Overwrite the live database with *backup_path*.
+        Closes the thread-local connection first, copies the file, then
+        re-opens the database so the instance is usable again.
+        Raises on any error so the caller can show a message to the user.
+        """
+        import shutil
+
+        if not os.path.isfile(backup_path):
+            raise FileNotFoundError(f"Backup file not found: {backup_path}")
+
+        # Close this thread's connection before overwriting
+        conn = getattr(self._local, "conn", None)
+        if conn:
+            try:
+                conn.close()
+            except Exception:
+                pass
+            self._local.conn = None
+
+        shutil.copy2(backup_path, self.db_path)
+        logger.info(f"Database restored from: {backup_path}")
+
+        # Re-initialize so the instance works normally after restore
+        self._init_database()
+
+    # ------------------------------------------------------------------
     # Search management (replaces inputURLS.csv)
     # ------------------------------------------------------------------
 
