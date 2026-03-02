@@ -102,7 +102,7 @@ class ImotScraper:
 
                     if existing_price is None:
                         # Brand new listing — fetch detail page for clean title, location, description, images, price/m²
-                        title, location, description, image_urls, price_per_sqm = self._extract_title_and_location(session, link)
+                        title, location, description, image_urls, price_per_sqm, area_sqm, floor, yard_sqm = self._extract_title_and_location(session, link)
                         if not title:
                             title = list_title
                         is_new = True
@@ -114,8 +114,11 @@ class ImotScraper:
                         location = existing_location or ""
                         description = None   # COALESCE keeps existing value in DB
                         image_urls  = None   # no re-fetch; images already stored
+                        area_sqm    = None   # COALESCE keeps existing value in DB
+                        floor       = None   # COALESCE keeps existing value in DB
+                        yard_sqm    = None   # COALESCE keeps existing value in DB
                         # Re-fetch detail page only for the updated price/m²
-                        _, _, _, _, price_per_sqm = self._extract_title_and_location(session, link)
+                        _, _, _, _, price_per_sqm, *_ = self._extract_title_and_location(session, link)
                         is_new = False
                         changed_count += 1
                         self.logger.info(f"Price change: {title} | old: {existing_price} | new: {price_text} | search: {search_name} | {link}")
@@ -133,6 +136,9 @@ class ImotScraper:
                         price=price_text,
                         is_new=is_new,
                         price_per_sqm=price_per_sqm,
+                        area_sqm=area_sqm,
+                        floor=floor,
+                        yard_sqm=yard_sqm,
                     )
 
                     # Store images only for new listings (detail page already fetched)
@@ -324,10 +330,11 @@ class ImotScraper:
             self.logger.warning(f"Could not fetch detail page {url}: {e}")
             return None
 
-    def _extract_title_and_location(self, session: requests.Session, url: str) -> Tuple[str, str, str, List[str], Optional[str]]:
+    def _extract_title_and_location(self, session: requests.Session, url: str) -> Tuple[str, str, str, List[str], Optional[str], Optional[str], Optional[str], Optional[str]]:
         """
         Fetch the property detail page and extract the clean title, full location,
-        description text, carousel image URLs, and price per square metre.
+        description text, carousel image URLs, price per square metre, area (m²),
+        floor info, and yard size (m²) for houses.
 
         The price-per-sqm is read from the detail page's price block (same page
         as images and description) — it is NOT reliably available on the listing
@@ -336,16 +343,16 @@ class ImotScraper:
         Only non-cloned owl-item divs are collected for images (the carousel
         duplicates cloned items for infinite-scroll; those carry the same URLs).
 
-        Returns (title, location, description, image_urls, price_per_sqm)
+        Returns (title, location, description, image_urls, price_per_sqm, area_sqm, floor, yard_sqm)
         — empty/None values on failure.
         """
         soup = self._fetch_detail(session, url)
         if not soup:
-            return "", "", "", [], None
+            return "", "", "", [], None, None, None, None
 
         adv_header = soup.find("div", class_="advHeader")
         if not adv_header:
-            return "", "", "", [], None
+            return "", "", "", [], None, None, None, None
 
         # --- Title ---
         title_div = adv_header.find("div", class_="title")
@@ -377,20 +384,29 @@ class ImotScraper:
                 description = text_div.get_text(separator='\n', strip=True)
 
         # --- Price per sqm ---
-        # The detail page contains a price block (div.price or similar) that
-        # includes the "€/m²" figure in a span — the same structure as the
-        # listing card but reliably present on the detail page.
         price_per_sqm = self._extract_price_per_sqm(soup)
 
+        # --- adParams: area, floor, yard ---
+        area_sqm: Optional[str] = None
+        floor:    Optional[str] = None
+        yard_sqm: Optional[str] = None
+        ad_params = soup.find("div", class_="adParams")
+        if ad_params:
+            for div in ad_params.find_all("div", recursive=False):
+                label = div.get_text(separator="\n", strip=True)
+                strong = div.find("strong")
+                value = strong.get_text(strip=True) if strong else ""
+                if not value:
+                    continue
+                if "Площ" in label:
+                    # "54 m²" — strip the superscript number that may appear after "m"
+                    area_sqm = value.replace("\u00b2", "²").strip()
+                elif "Eтаж" in label or "Етаж" in label:
+                    floor = value.strip()
+                elif "Двор" in label:
+                    yard_sqm = value.replace("\u00b2", "²").strip()
+
         # --- Images ---
-        # The carouselimg tags already carry the correct full-size CDN URL in
-        # their data-src attribute (e.g. cdn3.focus.bg/.../big/ or .../big1/).
-        # These are present in the static HTML even though the visible carousel
-        # is JS-rendered.  Each image appears twice (real item + clone for
-        # infinite scroll) so we deduplicate with a seen-set.
-        # We do NOT use the plain <img> //imotstatic*.focus.bg/... thumbnails —
-        # they are low-res and the //big1/ path is not reliably available on
-        # that CDN host for all listings.
         image_urls: List[str] = []
         seen: set = set()
         for img in soup.find_all("img", class_="carouselimg"):
@@ -401,7 +417,7 @@ class ImotScraper:
                 seen.add(src)
                 image_urls.append(src)
 
-        return title, location, description, image_urls, price_per_sqm
+        return title, location, description, image_urls, price_per_sqm, area_sqm, floor, yard_sqm
 
     def _extract_price(self, price_div: BeautifulSoup) -> Optional[str]:
         """Extract price information from price div"""

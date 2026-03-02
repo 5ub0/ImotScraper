@@ -439,6 +439,14 @@ class GalleryWindow(QDialog):
         _info_row("Location:", prop.get("location") or "—")
         _info_row("Price:",    prop.get("current_price") or "—")
 
+        # ── Physical attributes ───────────────────────────────────────────────
+        if prop.get("area_sqm"):
+            _info_row("Area:",  prop["area_sqm"])
+        if prop.get("floor"):
+            _info_row("Floor:", prop["floor"])
+        if prop.get("yard_sqm"):
+            _info_row("Yard:",  prop["yard_sqm"])
+
         # ── Price history mini-table ──────────────────────────────────────────
         past = [r for r in self._price_history if r["price_status"] != "Current"]
         if past:
