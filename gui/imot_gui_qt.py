@@ -317,6 +317,9 @@ class GalleryWindow(QDialog):
     Shows nav buttons, full-size image, info panel, price history, description.
     """
 
+    # Emitted when the user toggles the favorite button
+    favorite_toggled = pyqtSignal(str, bool)   # record_id, is_now_favorite
+
     def __init__(self, parent: QWidget, prop: dict, controller) -> None:
         super().__init__(parent)
         title_text = prop.get("title") or "—"
@@ -365,10 +368,20 @@ class GalleryWindow(QDialog):
         self._btn_next = _styled_btn("Next  ▶", min_width=110)
         self._btn_next.clicked.connect(lambda: self._show_image(self._idx + 1))
 
+        # Favorite toggle button
+        is_fav = bool(prop.get("is_favorite"))
+        self._fav_btn = _styled_btn(
+            "🌟  Remove Favorite" if is_fav else "☆  Add to Favorites",
+            style="purple" if is_fav else "default",
+            min_width=160,
+        )
+        self._fav_btn.clicked.connect(self._toggle_favorite)
+
         nav_layout.addWidget(self._btn_prev)
         nav_layout.addStretch()
         nav_layout.addWidget(self._counter_lbl)
         nav_layout.addStretch()
+        nav_layout.addWidget(self._fav_btn)
         nav_layout.addWidget(self._btn_next)
         root_layout.addWidget(nav)
 
@@ -477,6 +490,32 @@ class GalleryWindow(QDialog):
         self.keyPressEvent = self._key_press  # type: ignore[method-assign]
 
     # ── Image display ─────────────────────────────────────────────────────────
+
+    def _toggle_favorite(self) -> None:
+        """Toggle favorite state, update button appearance, emit signal."""
+        if not self._controller:
+            return
+        record_id = self._prop.get("record_id")
+        search_id = self._prop.get("search_id")
+        if not record_id or search_id is None:
+            return
+
+        is_now_fav = self._controller.toggle_favorite(record_id, search_id)
+        self._prop["is_favorite"] = 1 if is_now_fav else 0
+
+        # Update button label and colour
+        if is_now_fav:
+            self._fav_btn.setText("🌟  Remove Favorite")
+            self._fav_btn.setStyleSheet(
+                f"QPushButton {{ background: {T.BTN_PURPLE}; color: {T.FG_WHITE}; "
+                f"border-radius: {T.RADIUS}px; padding: 4px 12px; font-weight: bold; }}"
+                f"QPushButton:hover {{ background: {T.BTN_PURPLE_H}; }}"
+            )
+        else:
+            self._fav_btn.setText("☆  Add to Favorites")
+            self._fav_btn.setStyleSheet("")   # revert to global QSS default
+
+        self.favorite_toggled.emit(record_id, is_now_fav)
 
     def _show_image(self, idx: int) -> None:
         if not self._images:
@@ -664,7 +703,7 @@ class ResultsWindow(QDialog):
 
             cells = [
                 prop["status"],
-                prop.get("title") or "—",
+                ("🌟 " if bool(prop.get("is_favorite")) else "") + (prop.get("title") or "—"),
                 prop.get("location") or "—",
                 current_price,
                 sqm_val,
@@ -684,7 +723,6 @@ class ResultsWindow(QDialog):
                 except (ValueError, IndexError):
                     pass
 
-            # Active rows = slightly lighter panel; Inactive = main bg; underpriced = teal tint
             if is_underpriced:
                 row_bg = QColor(T.FEED_UNDERPRICED_BG)
             elif is_active:
@@ -724,11 +762,25 @@ class ResultsWindow(QDialog):
     def _on_double_click(self, row: int, _col: int) -> None:
         # Prop is stored on the Status cell (col 0) via UserRole
         status_item = self._table.item(row, 0)
-        if status_item:
-            prop = status_item.data(Qt.ItemDataRole.UserRole)
-            if prop:
-                gw = GalleryWindow(self, prop, self._controller)
-                gw.exec()
+        if not status_item:
+            return
+        prop = status_item.data(Qt.ItemDataRole.UserRole)
+        if not prop:
+            return
+        gw = GalleryWindow(self, prop, self._controller)
+        gw.exec()
+        # After gallery closes, re-read the favorite flag from DB and update the title cell
+        record_id = prop.get("record_id")
+        search_id = prop.get("search_id")
+        if record_id and search_id is not None and self._controller:
+            is_fav = self._controller.is_favorite(record_id, search_id)
+            title_item = self._table.item(row, 1)
+            if title_item:
+                raw_title = prop.get("title") or "—"
+                title_item.setText(("🌟 " if is_fav else "") + raw_title)
+
+    def _on_favorite_changed(self, record_id: str, is_now_favorite: bool) -> None:
+        pass  # kept for compat — actual update happens in _on_double_click after exec()
 
     def _open_area_chart(self) -> None:
         """Open the Area Average Price chart for this search."""
@@ -1460,21 +1512,33 @@ class ImotScraperMainWindow(QMainWindow):
             if kind == "CHANGED" else price
         )
 
-        # Pick colours
+        # Pick colours — favorites override the kind-based colour
         bg_map = {
             "NEW":         T.FEED_NEW_BG,
             "CHANGED":     T.FEED_CHANGED_BG,
             "DEACTIVATED": T.FEED_DELETED_BG,
         }
-        bg_color = QColor(bg_map.get(kind, T.BG2))
+        kind_color = QColor(bg_map.get(kind, T.BG2))
+
+        # Check if this listing is a favorite
+        is_fav = False
+        if link and self.controller and self.controller.db:
+            prop = self.controller.db.get_property_by_link(link)
+            if prop:
+                is_fav = bool(prop.get("is_favorite"))
+
+        bg_color = kind_color
         fg_color = QColor(T.FG_WHITE)
         font     = _bold_font()
+
+        # Prefix title with star if favorite
+        display_title = ("🌟 " + title) if is_fav else title
 
         row = self._feed_table.rowCount()
         self._feed_table.insertRow(row)
         self._feed_table.setRowHeight(row, T.ROW_H + 6)
 
-        for col, text in enumerate((search_name, kind, title, price_display)):
+        for col, text in enumerate((search_name, kind, display_title, price_display)):
             item = QTableWidgetItem(text)
             item.setBackground(QBrush(bg_color))
             item.setForeground(QBrush(fg_color))
@@ -1649,9 +1713,15 @@ class ImotScraperMainWindow(QMainWindow):
         self._run_btn.setText("▶  Run Scraping Now")
 
         if success and self.controller:
-            backup_path = self.controller.backup_database()
-            if backup_path:
-                logging.debug(f"Auto-backup created: {backup_path}")
+            def _do_backup():
+                try:
+                    path = self.controller.backup_database()
+                    if path:
+                        logging.debug(f"Auto-backup created: {path}")
+                except Exception as exc:
+                    logging.warning(f"Auto-backup failed: {exc}")
+
+            threading.Thread(target=_do_backup, daemon=True).start()
 
         self._refresh()
 

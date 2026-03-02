@@ -163,7 +163,7 @@ class AppController:
             self.logger.warning("backup_database: no database available")
             return None
         try:
-            return self.db.backup(keep_local=7, keep_drive=1)
+            return self.db.backup(keep_local=3, keep_drive=1)
         except Exception as e:
             self.logger.error(f"Database backup failed: {e}", exc_info=True)
             return None
@@ -207,3 +207,20 @@ class AppController:
         except Exception as exc:
             self.logger.error(f"restore_database failed: {exc}", exc_info=True)
             return False
+
+    # ── Favorites ─────────────────────────────────────────────────────────────
+
+    def is_favorite(self, record_id: str, search_id: int) -> bool:
+        """Return True if the property is currently marked as a favorite."""
+        if not self.db:
+            return False
+        return self.db.is_favorite(record_id, search_id)
+
+    def toggle_favorite(self, record_id: str, search_id: int) -> bool:
+        """
+        Toggle the favorite flag for a property.
+        Returns the new state: True = now a favorite, False = removed.
+        """
+        if not self.db:
+            return False
+        return self.db.toggle_favorite(record_id, search_id)

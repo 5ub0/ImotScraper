@@ -53,6 +53,7 @@ class AppTheme:
     FEED_CHANGED_BG     = "#5c4a00"   # price change     — dark amber
     FEED_DELETED_BG     = "#5c1a1a"   # inactive         — dark red
     FEED_UNDERPRICED_BG = "#1a3a3a"   # below area avg   — dark teal/cyan
+    FEED_FAVORITE_BG    = "#3b1f5e"   # favorited listing — dark purple
 
     # ── Typography ────────────────────────────────────────────────────────────
     FONT_FAMILY = "Segoe UI"
