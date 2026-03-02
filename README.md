@@ -50,7 +50,7 @@ Two charts available inside the Results window per search:
 
 ### Backup & restore
 - **Automatic backup** created after every successful scrape run
-- Up to **7 local backups** kept in `data/backups/` (oldest rotated out automatically)
+- Up to **3 local backups** kept in `data/backups/` (oldest rotated out automatically)
 - **⏪ Restore DB** button in the status bar opens the Restore dialog
 - Restore dialog lists all available local backups (Source, File Name, Size, Date)
 - Restoring takes a safety backup of the current DB first, then restores and restarts the app
@@ -132,7 +132,7 @@ All data lives in a single SQLite database next to the exe:
 data/
   imot_scraper.db
   backups/
-    imot_scraper_YYYYMMDD_HHMMSS.db   ← up to 7 kept
+    imot_scraper_YYYYMMDD_HHMMSS.db   ← up to 3 kept
 ```
 
 | Table              | Contents                                                              |

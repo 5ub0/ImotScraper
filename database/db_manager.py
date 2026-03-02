@@ -269,6 +269,13 @@ class DatabaseManager:
             conn.execute("ALTER TABLE scrape_runs ADD COLUMN active_count INTEGER")
             logger.info("Migration 7 (active_count) complete.")
 
+        # ── Migration 8: add is_favorite column to properties ─────────────────
+        prop_cols = [r[1] for r in conn.execute("PRAGMA table_info(properties)").fetchall()]
+        if "is_favorite" not in prop_cols:
+            logger.info("Migrating properties: adding is_favorite column...")
+            conn.execute("ALTER TABLE properties ADD COLUMN is_favorite INTEGER NOT NULL DEFAULT 0")
+            logger.info("Migration 8 (is_favorite) complete.")
+
     def _recalculate_price_statuses(self, conn: sqlite3.Connection):
         """
         After a migration, set price_status correctly for all rows:
@@ -522,6 +529,35 @@ class DatabaseManager:
                 (link,)
             ).fetchone()
             return dict(row) if row else None
+
+    def is_favorite(self, record_id: str, search_id: int) -> bool:
+        """Return True if the property is marked as a favorite."""
+        with self._get_connection() as conn:
+            row = conn.execute(
+                "SELECT is_favorite FROM properties WHERE record_id = ? AND search_id = ? LIMIT 1",
+                (record_id, search_id)
+            ).fetchone()
+            return bool(row["is_favorite"]) if row else False
+
+    def toggle_favorite(self, record_id: str, search_id: int) -> bool:
+        """
+        Flip is_favorite for the given property.
+        Returns the NEW state (True = now a favorite, False = removed).
+        """
+        with self._get_connection() as conn:
+            conn.execute(
+                """
+                UPDATE properties
+                SET    is_favorite = CASE WHEN is_favorite = 1 THEN 0 ELSE 1 END
+                WHERE  record_id = ? AND search_id = ?
+                """,
+                (record_id, search_id),
+            )
+            row = conn.execute(
+                "SELECT is_favorite FROM properties WHERE record_id = ? AND search_id = ? LIMIT 1",
+                (record_id, search_id)
+            ).fetchone()
+            return bool(row["is_favorite"]) if row else False
 
     def get_price_history(self, property_id: int) -> List[Dict]:
         """Return full price history for a single property, newest first."""
@@ -846,19 +882,45 @@ class DatabaseManager:
             logger.warning(f"GDrive: download failed: {exc}")
             return None
 
-    def backup(self, backup_dir: str = None, keep_local: int = 7, keep_drive: int = 1) -> str:
+    def backup(self, backup_dir: str = None, keep_local: int = 3,
+               keep_drive: int = 1, every_n_days: int = 5) -> str:
         """
         Create a timestamped local backup using SQLite's online backup API
         (safe while the DB is open in WAL mode), then upload a copy to
         Google Drive (if credentials are configured).
 
-        Local:  keeps newest *keep_local* files  (default 7).
-        Drive:  keeps newest *keep_drive* files  (default 1).
+        Frequency: only one backup per *every_n_days* period.  If a backup
+                   already exists that is less than *every_n_days* old the
+                   call returns the path of that existing backup immediately.
+        Local:     keeps the newest backup per calendar day, retaining the
+                   last *keep_local* such days (default 3).
+        Drive:     keeps newest *keep_drive* files  (default 1).
 
-        Returns the path of the newly created local backup file.
+        Returns the path of the backup file (new or existing).
         """
         target_dir = backup_dir if backup_dir else self._backup_dir()
         os.makedirs(target_dir, exist_ok=True)
+
+        # ── Skip if a backup already exists within the last every_n_days ─────
+        prefix_len = len(self._BACKUP_PREFIX)
+        existing = sorted(
+            f for f in os.listdir(target_dir)
+            if f.startswith(self._BACKUP_PREFIX) and f.endswith(self._BACKUP_SUFFIX)
+        )
+        if existing:
+            newest_name = existing[-1]
+            date_str = newest_name[prefix_len:prefix_len + 8]   # YYYYMMDD
+            try:
+                newest_date = datetime.strptime(date_str, "%Y%m%d").date()
+                days_since = (datetime.now().date() - newest_date).days
+                if days_since < every_n_days:
+                    logger.debug(
+                        f"Backup skipped — last backup is {days_since} day(s) old "
+                        f"(threshold: {every_n_days} days)."
+                    )
+                    return os.path.join(target_dir, newest_name)
+            except ValueError:
+                pass   # malformed filename — proceed with backup
 
         timestamp   = datetime.now().strftime("%Y%m%d_%H%M%S")
         backup_path = os.path.join(target_dir, f"{self._BACKUP_PREFIX}{timestamp}{self._BACKUP_SUFFIX}")
@@ -872,12 +934,32 @@ class DatabaseManager:
 
         logger.info(f"Database backed up to: {backup_path}")
 
-        # Rotate local backups
+        # ── Rotate local backups: one file per day, keep last keep_local days ─
         all_local = sorted(
             f for f in os.listdir(target_dir)
             if f.startswith(self._BACKUP_PREFIX) and f.endswith(self._BACKUP_SUFFIX)
         )
-        for old_file in all_local[:-keep_local]:
+
+        # Group by date prefix (first 8 chars after the backup prefix: YYYYMMDD)
+        by_day: dict[str, list[str]] = {}
+        for fname in all_local:
+            day_key = fname[prefix_len:prefix_len + 8]
+            by_day.setdefault(day_key, []).append(fname)
+
+        # Within each day keep only the newest file; delete the rest
+        latest_per_day: list[str] = []
+        for day_key in sorted(by_day):
+            day_files = sorted(by_day[day_key])
+            for old_file in day_files[:-1]:
+                try:
+                    os.remove(os.path.join(target_dir, old_file))
+                    logger.debug(f"Removed same-day duplicate backup: {old_file}")
+                except OSError as exc:
+                    logger.warning(f"Could not remove duplicate backup {old_file}: {exc}")
+            latest_per_day.append(day_files[-1])
+
+        # Trim to keep_local days
+        for old_file in latest_per_day[:-keep_local]:
             try:
                 os.remove(os.path.join(target_dir, old_file))
                 logger.debug(f"Removed old local backup: {old_file}")
