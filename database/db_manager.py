@@ -276,6 +276,20 @@ class DatabaseManager:
             conn.execute("ALTER TABLE properties ADD COLUMN is_favorite INTEGER NOT NULL DEFAULT 0")
             logger.info("Migration 8 (is_favorite) complete.")
 
+        # ── Migration 9: add area_sqm, floor, yard_sqm columns to properties ─
+        prop_cols = [r[1] for r in conn.execute("PRAGMA table_info(properties)").fetchall()]
+        if "area_sqm" not in prop_cols:
+            logger.info("Migrating properties: adding area_sqm column...")
+            conn.execute("ALTER TABLE properties ADD COLUMN area_sqm TEXT")
+        if "floor" not in prop_cols:
+            logger.info("Migrating properties: adding floor column...")
+            conn.execute("ALTER TABLE properties ADD COLUMN floor TEXT")
+        if "yard_sqm" not in prop_cols:
+            logger.info("Migrating properties: adding yard_sqm column...")
+            conn.execute("ALTER TABLE properties ADD COLUMN yard_sqm TEXT")
+        if any(c not in prop_cols for c in ("area_sqm", "floor", "yard_sqm")):
+            logger.info("Migration 9 (area_sqm / floor / yard_sqm) complete.")
+
     def _recalculate_price_statuses(self, conn: sqlite3.Connection):
         """
         After a migration, set price_status correctly for all rows:
@@ -313,6 +327,9 @@ class DatabaseManager:
         price: str,
         is_new: bool,
         price_per_sqm: Optional[str] = None,
+        area_sqm: Optional[str] = None,
+        floor: Optional[str] = None,
+        yard_sqm: Optional[str] = None,
     ) -> int:
         """
         Insert a new property or update an existing one.
@@ -320,6 +337,7 @@ class DatabaseManager:
         Description is stored on first fetch and never overwritten (changes are rare
         and the detail page is only fetched for new listings).
         price_per_sqm is always updated when provided (e.g. "10.43 €/m²").
+        area_sqm, floor, yard_sqm are stored on first fetch and never overwritten.
         Returns the property id.
         """
         with self._get_connection() as conn:
@@ -327,18 +345,22 @@ class DatabaseManager:
             now = self._local_now()
 
             cursor.execute("""
-                INSERT INTO properties (record_id, search_id, title, location, description, link, status, first_seen, last_seen, price_per_sqm)
-                VALUES (?, ?, ?, ?, ?, ?, 'Active', ?, ?, ?)
+                INSERT INTO properties (record_id, search_id, title, location, description, link, status, first_seen, last_seen, price_per_sqm, area_sqm, floor, yard_sqm)
+                VALUES (?, ?, ?, ?, ?, ?, 'Active', ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(record_id, search_id) DO UPDATE SET
                     title          = excluded.title,
                     location       = excluded.location,
-                    description    = COALESCE(excluded.description, properties.description),
+                    description    = COALESCE(excluded.description,  properties.description),
                     link           = excluded.link,
                     status         = 'Active',
                     last_seen      = excluded.last_seen,
                     inactivated_at = NULL,
-                    price_per_sqm  = COALESCE(excluded.price_per_sqm, properties.price_per_sqm)
-            """, (record_id, search_id, title, location, description, link, now, now, price_per_sqm))
+                    price_per_sqm  = COALESCE(excluded.price_per_sqm, properties.price_per_sqm),
+                    area_sqm       = COALESCE(excluded.area_sqm,      properties.area_sqm),
+                    floor          = COALESCE(excluded.floor,         properties.floor),
+                    yard_sqm       = COALESCE(excluded.yard_sqm,      properties.yard_sqm)
+            """, (record_id, search_id, title, location, description, link, now, now,
+                  price_per_sqm, area_sqm, floor, yard_sqm))
 
             cursor.execute(
                 "SELECT id FROM properties WHERE record_id = ? AND search_id = ?",
