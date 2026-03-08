@@ -34,6 +34,7 @@ from PyQt6.QtWidgets import (
     QAbstractItemView, QScrollArea,
     QMessageBox, QSizePolicy, QFrame, QTextEdit,
     QDialogButtonBox, QStyledItemDelegate, QStyleOptionViewItem,
+    QSlider,
 )
 
 from gui.theme_qt import AppTheme as T, build_stylesheet, make_button
@@ -309,6 +310,283 @@ class SearchDialog(QDialog):
         return [e.text().strip() for e in self._email_edits if e.text().strip()]
 
 
+# ── Mortgage Calculator ────────────────────────────────────────────────────────
+
+class MortgageCalculatorDialog(QDialog):
+    """
+    Modal dialog that calculates mortgage payments for a property.
+
+    Parameters (all adjustable via spinboxes):
+      - Property price          (read-only, parsed from listing)
+      - Interest rate %         (default 3.0)
+      - Loan term in years      (default 30)
+      - Finance %               (default 90 — i.e. bank finances 90 %)
+      - Tax rate %              (fixed 3 % of the property price)
+
+    Outputs:
+      - Down-payment            = price × (1 − finance%)
+      - Taxes                   = price × tax_rate%
+      - Initial payment         = down-payment + taxes
+      - Loan amount             = price × finance%
+      - Monthly payment         (standard annuity formula)
+    """
+
+    _TAX_RATE = 3.0   # fixed transfer-tax percentage
+    _VAT_RATE = 1.20  # 20% VAT multiplier when listing says "Без ДДС"
+
+    def __init__(self, parent: QWidget, price_text: str) -> None:
+        super().__init__(parent)
+        self.setWindowTitle("Mortgage Calculator")
+        self.setMinimumWidth(420)
+        _set_dark_titlebar(self)
+
+        self._has_vat = "Без ДДС" in price_text
+        base_price = self._parse_price(price_text)
+        self._price_eur = (base_price * self._VAT_RATE) if (base_price and self._has_vat) else base_price
+        self._build_ui(price_text)
+        self._recalculate()
+
+    # ── Price parser ──────────────────────────────────────────────────────────
+
+    @staticmethod
+    def _parse_price(raw: str) -> float | None:
+        """
+        Extract a numeric EUR value from strings like:
+          "85 000 EUR | Без ДДС"
+          "120000 EUR"
+          "65 500 €"
+          "—"
+        Returns None if the price cannot be parsed.
+        """
+        if not raw or raw.strip() == "—":
+            return None
+        import re
+        # Take everything before the first "|" (strip VAT info)
+        chunk = raw.split("|")[0]
+        # Remove currency tokens
+        chunk = chunk.replace("EUR", "").replace("€", "").replace("лв", "")
+        # Strip non-numeric except digits, dot, comma
+        digits_only = re.sub(r"[^\d.,]", "", chunk.strip())
+        if not digits_only:
+            return None
+        # Normalise: "85.000" (EU thousands) or "85,000" → 85000
+        # If both . and , exist: last one is decimal separator
+        if "," in digits_only and "." in digits_only:
+            if digits_only.rfind(",") > digits_only.rfind("."):
+                digits_only = digits_only.replace(".", "").replace(",", ".")
+            else:
+                digits_only = digits_only.replace(",", "")
+        elif "," in digits_only:
+            # Could be thousands (85,000) or decimal (1,5)
+            parts = digits_only.split(",")
+            if len(parts) == 2 and len(parts[1]) == 3:
+                digits_only = digits_only.replace(",", "")
+            else:
+                digits_only = digits_only.replace(",", ".")
+        try:
+            return float(digits_only)
+        except ValueError:
+            return None
+
+    # ── UI ────────────────────────────────────────────────────────────────────
+
+    def _build_ui(self, price_text: str) -> None:
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(20, 16, 20, 16)
+        layout.setSpacing(12)
+
+        FONT = T.FONT_FAMILY
+        SZ   = T.FONT_SIZE
+
+        # ── Property price (read-only display) ────────────────────────────────
+        price_lbl = QLabel(f"Property price:  {price_text}")
+        price_lbl.setFont(QFont(FONT, SZ + 4, QFont.Weight.Bold))
+        price_lbl.setStyleSheet(f"color: {T.ACCENT};")
+        layout.addWidget(price_lbl)
+
+        if self._has_vat and self._price_eur is not None:
+            vat_note = QLabel(
+                f"⚠ Without VAT (Без ДДС) — effective price incl. 20 % VAT: "
+                f"{self._price_eur:,.2f} EUR"
+            )
+            vat_note.setWordWrap(True)
+            vat_note.setStyleSheet(f"color: {T.ORANGE}; font-size: {SZ}pt;")
+            layout.addWidget(vat_note)
+
+        if self._price_eur is None:
+            err = QLabel("⚠  Could not parse a numeric price — calculator unavailable.")
+            err.setStyleSheet(f"color: {T.ORANGE}; padding: 12px; font-size: {SZ}pt;")
+            err.setWordWrap(True)
+            layout.addWidget(err)
+            close_btn = _styled_btn("Close", min_width=100)
+            close_btn.clicked.connect(self.accept)
+            layout.addWidget(close_btn, alignment=Qt.AlignmentFlag.AlignCenter)
+            return
+
+        # ── Shared styles ─────────────────────────────────────────────────────
+        label_ss  = f"color: {T.FG}; font-family: '{FONT}'; font-size: {SZ}pt; font-weight: bold;"
+        value_ss  = f"color: {T.ACCENT}; font-family: '{FONT}'; font-size: {SZ}pt; font-weight: bold; min-width: 52px;"
+        slider_ss = (
+            f"QSlider::groove:horizontal {{ height: 6px; background: {T.BG3}; border-radius: 3px; }}"
+            f"QSlider::handle:horizontal {{ width: 16px; margin: -5px 0; background: {T.ACCENT}; border-radius: 8px; }}"
+            f"QSlider::sub-page:horizontal {{ background: {T.ACCENT}; border-radius: 3px; }}"
+        )
+
+        def _slider_row(label_text: str, min_val: int, max_val: int,
+                         default: int, suffix: str, step: int = 1,
+                         divisor: int = 1) -> tuple[QSlider, QLabel]:
+            """Create a label + slider + value-label row, return (slider, value_label)."""
+            row_w = QWidget()
+            row_l = QHBoxLayout(row_w)
+            row_l.setContentsMargins(0, 0, 0, 0)
+            row_l.setSpacing(10)
+
+            lbl = QLabel(label_text)
+            lbl.setStyleSheet(label_ss)
+            lbl.setFixedWidth(150)
+
+            slider = QSlider(Qt.Orientation.Horizontal)
+            slider.setRange(min_val, max_val)
+            slider.setValue(default)
+            slider.setSingleStep(step)
+            slider.setPageStep(step * 5)
+            slider.setStyleSheet(slider_ss)
+            slider.setMinimumWidth(180)
+
+            val_lbl = QLabel()
+            val_lbl.setStyleSheet(value_ss)
+            val_lbl.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+
+            # Set initial display
+            if divisor > 1:
+                val_lbl.setText(f"{default / divisor:.2f}{suffix}")
+            else:
+                val_lbl.setText(f"{default}{suffix}")
+
+            # Live update
+            def _on_change(v: int, vl=val_lbl, s=suffix, d=divisor) -> None:
+                if d > 1:
+                    vl.setText(f"{v / d:.2f}{s}")
+                else:
+                    vl.setText(f"{v}{s}")
+                self._recalculate()
+            slider.valueChanged.connect(_on_change)
+
+            row_l.addWidget(lbl)
+            row_l.addWidget(slider, stretch=1)
+            row_l.addWidget(val_lbl)
+            layout.addWidget(row_w)
+            return slider, val_lbl
+
+        # Interest rate: 0.10 % – 15.00 %  (slider int range 10..1500, divisor 100)
+        self._rate_slider, _ = _slider_row(
+            "Interest rate:", 10, 1500, 300, " %", step=5, divisor=100,
+        )
+
+        # Loan term: 1 – 30 years
+        self._term_slider, _ = _slider_row(
+            "Loan term:", 1, 30, 30, " yr",
+        )
+
+        # Finance %: 10 – 90 %
+        self._finance_slider, _ = _slider_row(
+            "Bank finances:", 10, 90, 90, " %", step=5,
+        )
+
+        # Transfer tax (info-only)
+        tax_row = QWidget()
+        tax_l = QHBoxLayout(tax_row)
+        tax_l.setContentsMargins(0, 0, 0, 0)
+        tax_lbl = QLabel("Transfer tax:")
+        tax_lbl.setStyleSheet(label_ss)
+        tax_lbl.setFixedWidth(150)
+        tax_val = QLabel(f"{self._TAX_RATE:.1f} %  (fixed)")
+        tax_val.setStyleSheet(f"color: {T.FG_DIM}; font-family: '{FONT}'; font-size: {SZ}pt;")
+        tax_l.addWidget(tax_lbl)
+        tax_l.addStretch()
+        tax_l.addWidget(tax_val)
+        layout.addWidget(tax_row)
+
+        # ── Separator ─────────────────────────────────────────────────────────
+        sep = QFrame()
+        sep.setFrameShape(QFrame.Shape.HLine)
+        sep.setStyleSheet(f"color: {T.BG3};")
+        layout.addWidget(sep)
+
+        # ── Output labels ─────────────────────────────────────────────────────
+        out_val_ss  = f"color: {T.FG_WHITE}; font-family: '{FONT}'; font-size: {SZ + 1}pt;"
+        out_lbl_ss  = f"color: {T.FG}; font-family: '{FONT}'; font-size: {SZ}pt;"
+
+        out = QGridLayout()
+        out.setSpacing(8)
+        out.setColumnStretch(1, 1)
+
+        def _out_row(r: int, label: str) -> QLabel:
+            lbl = QLabel(label)
+            lbl.setStyleSheet(out_lbl_ss)
+            lbl.setFont(QFont(FONT, SZ, QFont.Weight.Bold))
+            val = QLabel("—")
+            val.setStyleSheet(out_val_ss)
+            val.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+            out.addWidget(lbl, r, 0)
+            out.addWidget(val, r, 1)
+            return val
+
+        self._downpayment_val = _out_row(0, "Down-payment:")
+        self._taxes_val       = _out_row(1, "Transfer taxes:")
+        self._initial_val     = _out_row(2, "Total initial payment:")
+        self._loan_val        = _out_row(3, "Loan amount:")
+        self._monthly_val     = _out_row(4, "Monthly payment:")
+
+        # Highlight total initial payment (subtly)
+        self._initial_val.setStyleSheet(
+            f"color: {T.ORANGE}; font-family: '{FONT}'; font-size: {SZ + 1}pt; font-weight: bold;"
+        )
+
+        # Highlight monthly payment
+        self._monthly_val.setStyleSheet(
+            f"color: {T.GREEN}; font-family: '{FONT}'; font-size: {SZ + 3}pt; font-weight: bold;"
+        )
+
+        layout.addLayout(out)
+
+        # ── Close button ──────────────────────────────────────────────────────
+        close_btn = _styled_btn("Close", min_width=100)
+        close_btn.clicked.connect(self.accept)
+        layout.addWidget(close_btn, alignment=Qt.AlignmentFlag.AlignCenter)
+
+    # ── Calculation ───────────────────────────────────────────────────────────
+
+    def _recalculate(self) -> None:
+        if self._price_eur is None:
+            return
+
+        price       = self._price_eur
+        rate_annual = self._rate_slider.value() / 10000.0   # slider 300 → 0.03
+        term_years  = self._term_slider.value()
+        finance_pct = self._finance_slider.value() / 100.0
+
+        downpayment  = price * (1.0 - finance_pct)
+        taxes        = price * (self._TAX_RATE / 100.0)
+        initial      = downpayment + taxes
+        loan_amount  = price * finance_pct
+
+        # Monthly annuity: M = P × [r(1+r)^n] / [(1+r)^n − 1]
+        r = rate_annual / 12.0        # monthly rate
+        n = term_years * 12            # total payments
+        if r > 0:
+            monthly = loan_amount * (r * (1 + r) ** n) / ((1 + r) ** n - 1)
+        else:
+            monthly = loan_amount / n if n else 0
+
+        fmt = lambda v: f"{v:,.2f} EUR"
+        self._downpayment_val.setText(fmt(downpayment))
+        self._taxes_val.setText(fmt(taxes))
+        self._initial_val.setText(fmt(initial))
+        self._loan_val.setText(fmt(loan_amount))
+        self._monthly_val.setText(fmt(monthly))
+
+
 # ── Gallery window ─────────────────────────────────────────────────────────────
 
 class GalleryWindow(QDialog):
@@ -437,7 +715,24 @@ class GalleryWindow(QDialog):
             row += 1
 
         _info_row("Location:", prop.get("location") or "—")
-        _info_row("Price:",    prop.get("current_price") or "—")
+
+        # ── Price (clickable → mortgage calculator) ───────────────────────────
+        price_text = prop.get("current_price") or "—"
+        price_lbl_key = QLabel("Price:")
+        price_lbl_key.setFont(_bold_font())
+        price_val = QLabel(f'{price_text}  🏦')
+        price_val.setWordWrap(True)
+        price_val.setStyleSheet(
+            f"color: {T.ACCENT}; text-decoration: underline;"
+        )
+        price_val.setCursor(Qt.CursorShape.PointingHandCursor)
+        price_val.setToolTip("Click to open mortgage calculator")
+        def _open_mortgage(_event, p=price_text) -> None:
+            MortgageCalculatorDialog(self, p).exec()
+        price_val.mousePressEvent = _open_mortgage
+        info_layout.addWidget(price_lbl_key, row, 0, Qt.AlignmentFlag.AlignTop)
+        info_layout.addWidget(price_val, row, 1, Qt.AlignmentFlag.AlignTop)
+        row += 1
 
         # ── Physical attributes ───────────────────────────────────────────────
         if prop.get("area_sqm"):
@@ -761,11 +1056,15 @@ class ResultsWindow(QDialog):
         self._table.setSortingEnabled(True)
 
     def _on_click(self, row: int, col: int) -> None:
-        """Single click on Link column opens URL in browser."""
+        """Single click on Link column → browser; Price column → mortgage calculator."""
         if col == 9:
             link = self._table.item(row, col)
             if link and link.text() != "—":
                 QDesktopServices.openUrl(QUrl(link.text()))
+        elif col == 3:
+            price_item = self._table.item(row, col)
+            if price_item and price_item.text() != "—":
+                MortgageCalculatorDialog(self, price_item.text()).exec()
 
     def _on_double_click(self, row: int, _col: int) -> None:
         # Prop is stored on the Status cell (col 0) via UserRole
