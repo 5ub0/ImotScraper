@@ -290,6 +290,13 @@ class DatabaseManager:
         if any(c not in prop_cols for c in ("area_sqm", "floor", "yard_sqm")):
             logger.info("Migration 9 (area_sqm / floor / yard_sqm) complete.")
 
+        # ── Migration 10: add searches TEXT to scrape_runs ────────────────────
+        sr_cols = [r[1] for r in conn.execute("PRAGMA table_info(scrape_runs)").fetchall()]
+        if "searches" not in sr_cols:
+            logger.info("Migrating scrape_runs: adding searches column...")
+            conn.execute("ALTER TABLE scrape_runs ADD COLUMN searches TEXT")
+            logger.info("Migration 10 (searches) complete.")
+
     def _recalculate_price_statuses(self, conn: sqlite3.Connection):
         """
         After a migration, set price_status correctly for all rows:
@@ -517,8 +524,7 @@ class DatabaseManager:
 
     def log_scrape_run(
         self,
-        search_id: int,
-        search_name: str,
+        searches: str,
         records_found: int,
         new_records: int,
         changed_prices: int,
@@ -528,14 +534,14 @@ class DatabaseManager:
         avg_price_per_sqm: Optional[float] = None,
         active_count: Optional[int] = None,
     ):
-        """Persist a summary row for one scrape run."""
+        """Persist one summary row for an entire scrape execution."""
         with self._get_connection() as conn:
             conn.execute("""
                 INSERT INTO scrape_runs
-                    (search_id, search_name, run_date, records_found, new_records, changed_prices,
+                    (searches, search_name, run_date, records_found, new_records, changed_prices,
                      inactive_count, success, error_message, avg_price_per_sqm, active_count)
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """, (search_id, search_name, self._local_now(), records_found, new_records,
+            """, (searches, searches, self._local_now(), records_found, new_records,
                   changed_prices, inactive_count, 1 if success else 0, error_message,
                   avg_price_per_sqm, active_count))
 

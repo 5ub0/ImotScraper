@@ -47,18 +47,58 @@ class ImotScraper:
                 return True
 
             session = self._create_session()
+
+            total_found     = 0
+            total_new       = 0
+            total_changed   = 0
+            total_inactive  = 0
+            all_success     = True
+            all_errors: list[str] = []
+            search_names: list[str] = []
+            all_sqm_values: list[float] = []
+            total_active    = 0
+
             for search in searches:
                 self.logger.info(f"Processing: {search['search_name']}")
-                self._scrape_search(session, search["url"], search["search_name"], search["id"])
+                result = self._scrape_search(session, search["url"], search["search_name"], search["id"])
+                search_names.append(search["search_name"])
+                total_found    += result["records_found"]
+                total_new      += result["new_records"]
+                total_changed  += result["changed_prices"]
+                total_inactive += result["inactive_count"]
+                total_active   += result["active_count"]
+                all_sqm_values.extend(result["sqm_values"])
+                if not result["success"]:
+                    all_success = False
+                    if result["error_message"]:
+                        all_errors.append(f"{search['search_name']}: {result['error_message']}")
 
-            return True
+            avg_sqm = round(sum(all_sqm_values) / len(all_sqm_values), 2) if all_sqm_values else None
+            self.db.log_scrape_run(
+                searches=", ".join(search_names),
+                records_found=total_found,
+                new_records=total_new,
+                changed_prices=total_changed,
+                inactive_count=total_inactive,
+                success=all_success,
+                error_message=" | ".join(all_errors) if all_errors else None,
+                avg_price_per_sqm=avg_sqm,
+                active_count=total_active,
+            )
+
+            return all_success
 
         except Exception as e:
             self.logger.error(f"Scraper failed with exception: {e}")
             return False
 
-    def _scrape_search(self, session: requests.Session, base_url: str, search_name: str, search_id: int):
-        """Scrape all pages for one search entry and persist results."""
+    def _scrape_search(self, session: requests.Session, base_url: str, search_name: str, search_id: int) -> dict:
+        """Scrape all pages for one search entry and persist results.
+
+        Returns a dict with counters for aggregation in execute():
+          records_found, new_records, changed_prices, inactive_count,
+          active_count, sqm_values (list[float]), success, error_message.
+        """
         active_record_ids: List[str] = []
         records_found = 0
         new_count = 0
@@ -169,7 +209,7 @@ class ImotScraper:
             # Record area avg snapshot for this search after the run
             self.db.record_area_stats_snapshot(search_id)
 
-            # Compute avg €/m² and active count for this run (from in-memory known + upserted data)
+            # Compute avg €/m² and active count for this search
             active_props = self.db.get_properties(search_id, status="Active")
             active_count = len(active_props)
             sqm_values: list[float] = []
@@ -180,37 +220,35 @@ class ImotScraper:
                         sqm_values.append(float(raw.split()[0].replace(",", ".")))
                     except (ValueError, IndexError):
                         pass
-            avg_sqm = round(sum(sqm_values) / len(sqm_values), 2) if sqm_values else None
-
-            self.db.log_scrape_run(
-                search_id=search_id,
-                search_name=search_name,
-                records_found=records_found,
-                new_records=new_count,
-                changed_prices=changed_count,
-                inactive_count=inactive_count,
-                success=True,
-                avg_price_per_sqm=avg_sqm,
-                active_count=active_count,
-            )
 
             self.logger.info(
                 f"Done '{search_name}': {records_found} found, "
                 f"{new_count} new, {changed_count} changed, {inactive_count} inactive."
             )
 
+            return {
+                "records_found":  records_found,
+                "new_records":    new_count,
+                "changed_prices": changed_count,
+                "inactive_count": inactive_count,
+                "active_count":   active_count,
+                "sqm_values":     sqm_values,
+                "success":        True,
+                "error_message":  None,
+            }
+
         except Exception as e:
             self.logger.error(f"Error scraping '{search_name}': {e}")
-            self.db.log_scrape_run(
-                search_id=search_id,
-                search_name=search_name,
-                records_found=records_found,
-                new_records=new_count,
-                changed_prices=changed_count,
-                inactive_count=0,
-                success=False,
-                error_message=str(e),
-            )
+            return {
+                "records_found":  records_found,
+                "new_records":    new_count,
+                "changed_prices": changed_count,
+                "inactive_count": 0,
+                "active_count":   0,
+                "sqm_values":     [],
+                "success":        False,
+                "error_message":  str(e),
+            }
 
     def _load_known_prices(self, search_id: int) -> dict:
         """

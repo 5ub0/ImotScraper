@@ -2290,11 +2290,12 @@ class RestoreDialog(QDialog):
 
 class RunHistoryDialog(QDialog):
     """
-    Shows all scrape_runs rows (newest first) in a table.
-    Failed runs are tinted red; the Error column shows the message inline.
+    Shows one row per scrape execution (each execution = one call to execute()).
+    The Searches column shows the comma-joined list of search names that ran.
+    Failed runs are tinted red; the Errors column shows the error message inline.
     """
 
-    _COLS = ["Date", "Search", "Found", "New", "Changed", "Inactive", "Status", "Error"]
+    _COLS = ["Date", "Searches", "Found", "New", "Changed", "Inactive", "Status", "Errors"]
 
     def __init__(self, parent: QWidget, controller) -> None:
         super().__init__(parent)
@@ -2310,13 +2311,13 @@ class RunHistoryDialog(QDialog):
         self._table.setHorizontalHeaderLabels(self._COLS)
         hdr = self._table.horizontalHeader()
         hdr.setSectionResizeMode(0, QHeaderView.ResizeMode.Fixed)         # Date
-        hdr.setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)        # Search
+        hdr.setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)        # Searches
         hdr.setSectionResizeMode(2, QHeaderView.ResizeMode.Fixed)          # Found
         hdr.setSectionResizeMode(3, QHeaderView.ResizeMode.Fixed)          # New
         hdr.setSectionResizeMode(4, QHeaderView.ResizeMode.Fixed)          # Changed
         hdr.setSectionResizeMode(5, QHeaderView.ResizeMode.Fixed)          # Inactive
         hdr.setSectionResizeMode(6, QHeaderView.ResizeMode.Fixed)          # Status
-        hdr.setSectionResizeMode(7, QHeaderView.ResizeMode.Stretch)        # Error
+        hdr.setSectionResizeMode(7, QHeaderView.ResizeMode.Stretch)        # Errors
         self._table.setColumnWidth(0, 148)
         self._table.setColumnWidth(2, 58)
         self._table.setColumnWidth(3, 48)
@@ -2340,42 +2341,43 @@ class RunHistoryDialog(QDialog):
         runs = controller.get_all_scrape_runs() if controller else []
         self._table.setSortingEnabled(False)
         self._table.setRowCount(len(runs))
+
         for row, run in enumerate(runs):
-            failed = not bool(run.get("success", 1))
-            err    = run.get("error_message") or ""
+            failed       = not bool(run.get("success", 1))
+            # New rows have a dedicated `searches` column; fall back to `search_name` for
+            # legacy rows written before Migration 10.
+            searches_str = (run.get("searches") or run.get("search_name") or "").strip()
+            errors_str   = (run.get("error_message") or "").strip()
+            raw_date     = str(run.get("run_date", ""))
 
             row_bg = QColor(T.FEED_DELETED_BG) if failed else QColor(T.BG2)
             row_fg = QColor(T.FG_WHITE)
 
-            # Format the run_date nicely (strip microseconds if present)
-            raw_date = run.get("run_date", "")
-            try:
-                date_str = raw_date[:16]   # "YYYY-MM-DD HH:MM"
-            except Exception:
-                date_str = str(raw_date)
-
             values = [
-                date_str,
-                run.get("search_name", ""),
-                str(run.get("records_found", "")),
-                str(run.get("new_records", "")),
-                str(run.get("changed_prices", "")),
-                str(run.get("inactive_count", "")),
+                raw_date,
+                searches_str,
+                str(run.get("records_found",  0) or 0) or "—",
+                str(run.get("new_records",    0) or 0) or "—",
+                str(run.get("changed_prices", 0) or 0) or "—",
+                str(run.get("inactive_count", 0) or 0) or "—",
                 "FAILED" if failed else "OK",
-                err,
+                errors_str,
             ]
 
             for col, val in enumerate(values):
                 item = QTableWidgetItem(val)
                 item.setBackground(QBrush(row_bg))
 
-                # Error column: red text when there is an error message
-                if col == 7 and err:
+                if col == 7 and errors_str:
                     item.setForeground(QBrush(QColor(T.BTN_RED_H)))
+                    item.setToolTip(errors_str)
                 elif col == 6 and failed:
                     item.setForeground(QBrush(QColor(T.BTN_RED_H)))
                 else:
                     item.setForeground(QBrush(row_fg))
+
+                if col == 1 and searches_str:
+                    item.setToolTip(searches_str)
 
                 # Right-align numeric columns
                 if col in (2, 3, 4, 5):
