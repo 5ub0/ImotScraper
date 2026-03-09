@@ -893,7 +893,7 @@ class ResultsWindow(QDialog):
         layout.setSpacing(6)
 
         # Table
-        cols = ["Status", "Title", "Location", "Price", "€/m²",
+        cols = ["", "Status", "Title", "Location", "Price", "€/m²",
                 "First Seen", "Deactivated At", "Days on Market", "Images", "Link"]
         self._table = QTableWidget(0, len(cols))
         self._table.setHorizontalHeaderLabels(cols)
@@ -907,18 +907,20 @@ class ResultsWindow(QDialog):
         self._table.setAlternatingRowColors(True)
         self._table.setSortingEnabled(False)   # enabled AFTER populate to avoid row scrambling
         self._table.setShowGrid(True)
+        self._table.setIconSize(QSize(70, 52))
 
-        # Column widths (0=Status, 1=Title, 2=Location, 3=Price, 4=€/m², 5=First Seen,
-        #                6=Deactivated At, 7=Days on Market, 8=Images, 9=Link)
-        self._table.setColumnWidth(0, 80)
-        self._table.setColumnWidth(1, 220)
-        self._table.setColumnWidth(2, 180)
-        self._table.setColumnWidth(3, 130)
-        self._table.setColumnWidth(4, 90)
-        self._table.setColumnWidth(5, 130)
+        # Column widths (0=Thumb, 1=Status, 2=Title, 3=Location, 4=Price, 5=€/m²,
+        #                6=First Seen, 7=Deactivated At, 8=Days on Market, 9=Images, 10=Link)
+        self._table.setColumnWidth(0, 78)
+        self._table.setColumnWidth(1, 80)
+        self._table.setColumnWidth(2, 220)
+        self._table.setColumnWidth(3, 180)
+        self._table.setColumnWidth(4, 130)
+        self._table.setColumnWidth(5, 90)
         self._table.setColumnWidth(6, 130)
-        self._table.setColumnWidth(7, 110)
-        self._table.setColumnWidth(8, 60)
+        self._table.setColumnWidth(7, 130)
+        self._table.setColumnWidth(8, 110)
+        self._table.setColumnWidth(9, 60)
 
         # Fetch latest area avg for underpriced highlighting
         self._area_avg: float | None = None
@@ -974,21 +976,22 @@ class ResultsWindow(QDialog):
             current_price = next(
                 (r["price"] for r in ph if r["price_status"] == "Current"), "—"
             )
-            img_count = len(db.get_images(prop["id"])) if db else 0
+            img_count = db.get_image_count(prop["id"]) if db else 0
             img_label = f"🖼 {img_count}" if img_count else "—"
+
+            # Thumbnail: first image blob
+            thumb_bytes = db.get_first_image(prop["id"]) if db else None
 
             enriched = {**prop, "current_price": current_price}
 
             row_idx = self._table.rowCount()
             self._table.insertRow(row_idx)
-            self._table.setRowHeight(row_idx, T.ROW_H)
+            self._table.setRowHeight(row_idx, T.THUMB_H)
 
             sqm_val = prop.get("price_per_sqm") or "—"
             is_active = (prop["status"] == "Active")
 
             # ── Days on Market ─────────────────────────────────────────────
-            # Active  : today − first_seen
-            # Inactive: inactivated_at − first_seen  (fallback: last_seen − first_seen)
             dom_str = "—"
             fs_raw = prop.get("first_seen")
             if fs_raw:
@@ -1004,6 +1007,7 @@ class ResultsWindow(QDialog):
                 except (ValueError, TypeError):
                     pass
 
+            # Columns 1..10 text content (col 0 is the thumbnail)
             cells = [
                 prop["status"],
                 ("🌟 " if bool(prop.get("is_favorite")) else "") + (prop.get("title") or "—"),
@@ -1038,18 +1042,32 @@ class ResultsWindow(QDialog):
             if not is_active:
                 row_font.setItalic(True)
 
-            for col, val in enumerate(cells):
+            # Col 0 — thumbnail
+            thumb_item = QTableWidgetItem()
+            thumb_item.setBackground(QBrush(row_bg))
+            thumb_item.setData(Qt.ItemDataRole.UserRole, enriched)
+            if thumb_bytes:
+                qimg = QImage.fromData(thumb_bytes)
+                if not qimg.isNull():
+                    pix = QPixmap.fromImage(qimg).scaled(
+                        T.THUMB_W, T.THUMB_H - 4,
+                        Qt.AspectRatioMode.KeepAspectRatio,
+                        Qt.TransformationMode.SmoothTransformation,
+                    )
+                    thumb_item.setIcon(QIcon(pix))
+            self._table.setItem(row_idx, 0, thumb_item)
+
+            # Cols 1..10 — text cells
+            for col, val in enumerate(cells, start=1):
                 item = QTableWidgetItem(str(val))
                 item.setForeground(QBrush(text_fg))
                 item.setBackground(QBrush(row_bg))
                 item.setFont(row_font)
                 item.setTextAlignment(
                     Qt.AlignmentFlag.AlignCenter | Qt.AlignmentFlag.AlignVCenter
-                    if col in (0, 4, 5, 6, 7, 8)
+                    if col in (1, 5, 6, 7, 8, 9)
                     else Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft
                 )
-                if col == 0:
-                    item.setData(Qt.ItemDataRole.UserRole, enriched)
                 self._table.setItem(row_idx, col, item)
 
         # Enable sorting now that all rows + UserRole data are in place
@@ -1057,21 +1075,21 @@ class ResultsWindow(QDialog):
 
     def _on_click(self, row: int, col: int) -> None:
         """Single click on Link column → browser; Price column → mortgage calculator."""
-        if col == 9:
+        if col == 10:
             link = self._table.item(row, col)
             if link and link.text() != "—":
                 QDesktopServices.openUrl(QUrl(link.text()))
-        elif col == 3:
+        elif col == 4:
             price_item = self._table.item(row, col)
             if price_item and price_item.text() != "—":
                 MortgageCalculatorDialog(self, price_item.text()).exec()
 
     def _on_double_click(self, row: int, _col: int) -> None:
-        # Prop is stored on the Status cell (col 0) via UserRole
-        status_item = self._table.item(row, 0)
-        if not status_item:
+        # Prop is stored on the thumbnail cell (col 0) via UserRole
+        thumb_item = self._table.item(row, 0)
+        if not thumb_item:
             return
-        prop = status_item.data(Qt.ItemDataRole.UserRole)
+        prop = thumb_item.data(Qt.ItemDataRole.UserRole)
         if not prop:
             return
         gw = GalleryWindow(self, prop, self._controller)
@@ -1081,7 +1099,7 @@ class ResultsWindow(QDialog):
         search_id = prop.get("search_id")
         if record_id and search_id is not None and self._controller:
             is_fav = self._controller.is_favorite(record_id, search_id)
-            title_item = self._table.item(row, 1)
+            title_item = self._table.item(row, 2)
             if title_item:
                 raw_title = prop.get("title") or "—"
                 title_item.setText(("🌟 " if is_fav else "") + raw_title)

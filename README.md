@@ -10,7 +10,7 @@ Results are stored in a local SQLite database and browsed entirely inside the ap
 ### Core scraping
 - Add and manage multiple imot.bg search URLs
 - Full pagination — all pages of a search are scraped automatically
-- **New listing detection** — title, location, description, and up to 10 images captured on first sight
+- **New listing detection** — title, location, description, and up to 5 images captured on first sight
 - **Price change detection** — full price history recorded with timestamp and status (Current / Previous / Older)
 - **Inactive listing detection** — properties no longer on the site are marked automatically
 - Persistent HTTP session with 3-retry adapter per run; detail pages fetched only for new listings
@@ -23,10 +23,21 @@ Results are stored in a local SQLite database and browsed entirely inside the ap
 - Feed columns: **Search | Type | Title | Price** — rows persist until the next run starts
 
 ### Results browser
-- Sortable table: Status, Title, Location, Price, First Seen, Last Seen, Image Count
+- Sortable table with **thumbnail preview** (first image), Status, Title, Location, Price, First Seen, Last Seen, Image Count
 - Active listings shown in white; inactive in dimmed italic
 - **Underpriced** listings (>10 % below the area average €/m²) highlighted with a teal tint
 - Double-click any row to open the full image gallery for that listing
+- Single-click on the **Price** column to open the **mortgage calculator**
+
+### Mortgage calculator
+- Opens from any price cell in the results table, or from the price label in the gallery
+- Automatically parses the listing price; detects **"Без ДДС"** (no VAT) and applies ×1.20
+- Three sliders: **interest rate** (0.10–15.00 %), **loan term** (1–30 years), **bank finances** (10–90 %)
+- Shows: down payment, 3 % transfer taxes, **total initial payment**, loan amount, **monthly payment**
+
+### Property details
+- **Floor**, **area (m²)**, and **yard (m²)** extracted from detail pages (Bulgarian labels: Площ / Етаж / Двор)
+- Shown in the gallery info panel alongside price and location
 
 ### Analytics charts
 Two charts available inside the Results window per search:
@@ -138,9 +149,9 @@ data/
 | Table              | Contents                                                              |
 |--------------------|-----------------------------------------------------------------------|
 | `searches`         | Saved search URLs and names                                           |
-| `properties`       | All scraped listings (title, location, description, price_per_sqm, …) |
+| `properties`       | All scraped listings (title, location, description, price_per_sqm, area_sqm, floor, yard_sqm, …) |
 | `price_history`    | Full price timeline per listing (Current / Previous / Older)          |
-| `property_images`  | Image BLOBs — up to 10 per listing                                    |
+| `property_images`  | Image BLOBs — up to 5 per listing                                     |
 | `search_area_stats`| Daily avg €/m² snapshots per search (legacy)                         |
 | `scrape_runs`      | Per-run summary: found / new / changed / inactive / avg €/m² / active count |
 

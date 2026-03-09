@@ -451,6 +451,30 @@ class DatabaseManager:
             ).fetchall()
         return [dict(r) for r in rows]
 
+    def get_image_count(self, property_id: int) -> int:
+        """Return the number of stored images for a property (no BLOB transfer)."""
+        with self._get_connection() as conn:
+            row = conn.execute(
+                "SELECT COUNT(*) AS cnt FROM property_images WHERE property_id = ?",
+                (property_id,),
+            ).fetchone()
+        return row["cnt"] if row else 0
+
+    def get_first_image(self, property_id: int) -> Optional[bytes]:
+        """Return the image_data of the first image (position 0), or None."""
+        with self._get_connection() as conn:
+            row = conn.execute(
+                """
+                SELECT image_data
+                FROM   property_images
+                WHERE  property_id = ?
+                ORDER  BY position
+                LIMIT  1
+                """,
+                (property_id,),
+            ).fetchone()
+        return row["image_data"] if row else None
+
     def _price_changed(self, cursor: sqlite3.Cursor, property_id: int, new_price: str) -> bool:
         """Return True if the new price differs from the current recorded price."""
         row = cursor.execute(

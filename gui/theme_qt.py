@@ -66,6 +66,8 @@ class AppTheme:
     PAD_SM = 5    # small padding
     RADIUS = 8    # border-radius for buttons (px)
     ROW_H  = 26   # default table row height (px)
+    THUMB_H = 56  # row height when thumbnails are shown (px)
+    THUMB_W = 70  # thumbnail width (px)
 
 
 # ── QSS stylesheet ────────────────────────────────────────────────────────────
