@@ -1496,6 +1496,7 @@ class ImotScraperMainWindow(QMainWindow):
         self._search_ids:     dict[str, int] = {}   # search_name → DB id
         self._scraper_thread: Optional[threading.Thread] = None
         self._scheduler_running = False
+        self._scrape_running    = False   # True while any scrape (manual or scheduled) is active
 
         # Feed bridge: log handler → Qt signal → slot on main thread
         self._feed_bridge = FeedBridge()
@@ -1657,9 +1658,9 @@ class ImotScraperMainWindow(QMainWindow):
         self._feed_table.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeMode.Fixed)
         self._feed_table.horizontalHeader().setSectionResizeMode(2, QHeaderView.ResizeMode.Stretch)
         self._feed_table.horizontalHeader().setSectionResizeMode(3, QHeaderView.ResizeMode.Fixed)
-        self._feed_table.setColumnWidth(0, 160)
+        self._feed_table.setColumnWidth(0, 140)
         self._feed_table.setColumnWidth(1, 110)
-        self._feed_table.setColumnWidth(3, 220)
+        self._feed_table.setColumnWidth(3, 264)
         self._feed_table.verticalHeader().setVisible(False)
         self._feed_table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
         self._feed_table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
@@ -1967,6 +1968,9 @@ class ImotScraperMainWindow(QMainWindow):
     def _on_scrape_starting(self) -> None:
         """Slot — runs on main thread.  Clears the feed and resets the status
         label.  Used by both on-demand runs and scheduler-triggered runs."""
+        self._scrape_running = True
+        self._run_btn.setEnabled(False)
+        self._run_btn.setText("Scraping...")
         self._feed_table.clearContents()
         self._feed_table.setRowCount(0)
         self._feed_link_map.clear()
@@ -1980,11 +1984,11 @@ class ImotScraperMainWindow(QMainWindow):
         self._status_lbl.setStyleSheet(f"color: {T.YELLOW}; font-size: 12px;")
 
     def start_scraping(self) -> None:
-        if self._scheduler_running:
+        if self._scrape_running:
             QMessageBox.warning(
                 self, "Warning",
-                "The scheduler is currently running.\n"
-                "Please stop it first before running an on-demand job."
+                "A scrape is already in progress.\n"
+                "Please wait for it to finish."
             )
             return
         if self.controller:
@@ -2000,8 +2004,6 @@ class ImotScraperMainWindow(QMainWindow):
         self._on_scrape_starting()
 
         logging.info(f"Starting scraper for {len(searches)} search(es)...")
-        self._run_btn.setEnabled(False)
-        self._run_btn.setText("Scraping...")
 
         self._scraper_thread = threading.Thread(
             target=self._scrape_worker, daemon=True
@@ -2018,6 +2020,7 @@ class ImotScraperMainWindow(QMainWindow):
 
     def _on_scrape_finished(self, success: bool) -> None:
         """Slot — runs on main thread."""
+        self._scrape_running = False
         if self.controller:
             try:
                 self.controller.send_email_reports(success)
