@@ -1482,7 +1482,8 @@ class ImotScraperMainWindow(QMainWindow):
     """
 
     # Emitted from the scraper thread to update the status bar safely
-    _scrape_finished = pyqtSignal(bool)   # success flag
+    _scrape_finished  = pyqtSignal(bool)   # success flag
+    _scrape_starting  = pyqtSignal()       # clear feed + set status before scheduled runs
 
     def __init__(self, controller=None) -> None:
         super().__init__()
@@ -1509,6 +1510,7 @@ class ImotScraperMainWindow(QMainWindow):
         root_logger.setLevel(logging.INFO)
 
         self._scrape_finished.connect(self._on_scrape_finished)
+        self._scrape_starting.connect(self._on_scrape_starting)
 
         self._build_ui()
         self._load_searches()
@@ -1962,6 +1964,16 @@ class ImotScraperMainWindow(QMainWindow):
 
     # ── Scraping ──────────────────────────────────────────────────────────────
 
+    def _on_scrape_starting(self) -> None:
+        """Slot — runs on main thread.  Clears the feed and resets the status
+        label.  Used by both on-demand runs and scheduler-triggered runs."""
+        self._feed_table.clearContents()
+        self._feed_table.setRowCount(0)
+        self._feed_link_map.clear()
+        self._status_lbl.setText("  ⏳  Starting scrape…")
+        self._status_lbl.setStyleSheet(f"color: {T.YELLOW}; font-size: 12px;")
+        self._status_counts_lbl.setText("")
+
     def _on_search_progress(self, search_name: str) -> None:
         """Update status label with the currently running search name."""
         self._status_lbl.setText(f"  ⏳  Scraping: {search_name}")
@@ -1985,13 +1997,7 @@ class ImotScraperMainWindow(QMainWindow):
                 )
                 return
 
-        # Clear feed
-        self._feed_table.clearContents()
-        self._feed_table.setRowCount(0)
-        self._feed_link_map.clear()
-        self._status_lbl.setText(f"  ⏳  Starting scrape…")
-        self._status_lbl.setStyleSheet(f"color: {T.YELLOW}; font-size: 12px;")
-        self._status_counts_lbl.setText("")
+        self._on_scrape_starting()
 
         logging.info(f"Starting scraper for {len(searches)} search(es)...")
         self._run_btn.setEnabled(False)

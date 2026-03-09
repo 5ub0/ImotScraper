@@ -71,6 +71,23 @@ def main():
         app.setStyleSheet(build_stylesheet())
         win = ImotScraperMainWindow(controller=controller)
         controller.gui = win
+
+        # Wrap the scheduler's scraper_function so that it notifies the GUI
+        # (clear feed, reset status label) before and after each scheduled run.
+        _original_execute = scheduler.scraper_function
+
+        def _gui_aware_execute() -> bool:
+            win._scrape_starting.emit()           # clear feed (cross-thread safe)
+            try:
+                success = _original_execute()
+            except Exception as exc:
+                logging.error(f"Critical error during scheduled run: {exc}")
+                success = False
+            win._scrape_finished.emit(success)     # reset status label
+            return success
+
+        scheduler.scraper_function = _gui_aware_execute
+
         win.show()
 
         logging.info("ImotScraper application started")
