@@ -70,7 +70,7 @@ GUI  →  Controller  →  Scraper / DB / Scheduler
 | Table               | Key columns / purpose |
 |---------------------|-----------------------|
 | `searches`          | `id`, `search_name`, `url`, `emails` |
-| `properties`        | `record_id`, `search_id`, `title`, `location`, `description`, `link`, `status`, `first_seen`, `last_seen`, `inactivated_at`, `price_per_sqm` |
+| `properties`        | `record_id`, `search_id`, `title`, `location`, `description`, `link`, `status`, `first_seen`, `last_seen`, `inactivated_at`, `price_per_sqm`, `area_sqm`, `floor`, `yard_sqm` |
 | `price_history`     | `property_id`, `price`, `price_status` (Current/Previous/Older), `is_new`, `recorded_at` |
 | `property_images`   | `property_id`, `url`, `image_data` BLOB, `position` |
 | `search_area_stats` | Legacy daily avg €/m² snapshots — still written but charts now read from `scrape_runs` |
@@ -82,11 +82,12 @@ GUI  →  Controller  →  Scraper / DB / Scheduler
 
 - `execute()` creates one **persistent `requests.Session`** (3-retry adapter) for the entire run.
 - Decision tree per listing:
-  - **New** (`existing_price is None`) → fetch detail page, extract title/location/description/images, set `is_new=True`.
+  - **New** (`existing_price is None`) → fetch detail page, extract title/location/description/images/area/floor/yard, set `is_new=True`.
   - **Price changed** → reuse stored title/location, pass `description=None` (COALESCE keeps existing), skip images.
   - **Unchanged** → `continue` — no DB write at all.
 - `_load_known_prices(search_id)` bulk-loads `(price, title, location)` keyed by `record_id` before the pagination loop — avoids per-listing DB round-trips.
-- Image extraction: `soup.find_all("img", class_="carouselimg")` → `img["data-src"]`. Carousel clones are deduplicated with a `seen` set. Cap: **10 images per listing**.
+- `_extract_title_and_location()` returns an 8-tuple: `(title, location, description, image_urls, price_per_sqm, area_sqm, floor, yard_sqm)`. Area/floor/yard parsed from `div.adParams` Bulgarian labels (Площ / Етаж / Двор).
+- Image extraction: `soup.find_all("img", class_="carouselimg")` → `img["data-src"]`. Carousel clones are deduplicated with a `seen` set. Cap: **5 images per listing**.
 - Pagination: appends `/p-{n}` before `?` in the URL; stops when no `<a class="saveSlink next">` is found.
 - After each search, unseen listings are marked `Inactive` via `db.mark_inactive()`.
 - After `mark_inactive`, a per-listing loop emits one `"Removed listing: …"` log line for each inactivated record (uses the pre-loaded `known` dict + `db.get_link_for_record()`).
@@ -111,6 +112,7 @@ GUI  →  Controller  →  Scraper / DB / Scheduler
 | Detail location | `div.advHeader > div.location` descendants text nodes |
 | Description | `div.moreInfo > div.text` → `get_text(separator='\n', strip=True)` |
 | Images | `img.carouselimg[data-src]` (full-size CDN URL) |
+| Area / Floor / Yard | `div.adParams` → `strong` labels: Площ → `area_sqm`, Етаж → `floor`, Двор → `yard_sqm` |
 
 ---
 
@@ -135,9 +137,13 @@ GUI  →  Controller  →  Scraper / DB / Scheduler
 
 ### ResultsWindow (`QDialog`)
 - `setSortingEnabled(False)` during `_populate()` — re-enable after all rows inserted.
-- Prop dict stored in `item.setData(Qt.ItemDataRole.UserRole, enriched)` on col 0; read back in `_on_double_click` via `status_item.data(Qt.ItemDataRole.UserRole)`.
+- 11 columns: **Thumb** (0, 78 px, icon) | **Status** (1) | **Title** (2) | **Location** (3) | **Price** (4) | **€/m²** (5) | **First Seen** (6) | **Deactivated At** (7) | **Days on Market** (8) | **Images** (9) | **Link** (10, stretch).
+- Column 0 shows a **thumbnail** (first image scaled to `THUMB_W×THUMB_H`) via `QTableWidgetItem.setIcon()`; `setIconSize(QSize(70, 52))` on the table. Row height: `T.THUMB_H` (56 px).
+- `db.get_image_count()` used for the "🖼 N" label (no BLOB transfer); `db.get_first_image()` loads only the first image's bytes for the thumbnail.
+- Prop dict stored in `item.setData(Qt.ItemDataRole.UserRole, enriched)` on col 0 (thumbnail cell); read back in `_on_double_click`.
 - Active rows: `BG2` background, `FG_WHITE` foreground, normal font. Inactive: `BG` background, `FG_DIM` foreground, italic.
 - Underpriced rows (active; `price_per_sqm` > 10 % below area avg): `FEED_UNDERPRICED_BG` teal tint.
+- Single-click col 4 (Price) → `MortgageCalculatorDialog`; single-click col 10 (Link) → browser.
 - Two chart buttons in the summary bar: **📊 Area Avg Chart** → `AreaAvgChartDialog`; **📈 Active Listings History** → `ListingsFoundChartDialog`.
 
 ### Chart dialogs (`AreaAvgChartDialog`, `ListingsFoundChartDialog`)
@@ -162,6 +168,15 @@ Both use `matplotlib` with `backend_qtagg`, lazy-imported inside `__init__`.
 - `QLabel` + `QPixmap` image display with `Qt.AspectRatioMode.KeepAspectRatio` scaling.
 - `resizeEvent` rescales the current image to fill the available area.
 - Keyboard `←`/`→` bindings for navigation.
+- Info panel shows Area, Floor, Yard (conditional — only if data present) between price and price history.
+- Price label is clickable (blue underline, 🏦 icon) — opens `MortgageCalculatorDialog`.
+
+### MortgageCalculatorDialog (`QDialog`)
+- Parses price from text like `"85 000 EUR | Без ДДС"`.
+- Detects "Без ДДС" (without VAT) → applies ×1.20, shows orange warning with effective price.
+- Three horizontal sliders: interest rate (0.10–15.00 %, step 0.05 %), loan term (1–30 yr), bank finances (10–90 %, step 5 %).
+- Outputs: down payment, transfer taxes (3 % fixed), total initial payment (orange), loan amount, monthly payment (green, bold).
+- Standard annuity formula: `rate_annual = slider.value() / 10_000`.
 
 ### SearchDialog (`QDialog`)
 - Email fields are present but `setEnabled(False)` — do not remove them.
