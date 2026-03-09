@@ -410,7 +410,7 @@ class ImotScraper:
         image_urls: List[str] = []
         seen: set = set()
         for img in soup.find_all("img", class_="carouselimg"):
-            if len(image_urls) >= 10:
+            if len(image_urls) >= 5:
                 break
             src = img.get("data-src", "")
             if src and src not in seen:
