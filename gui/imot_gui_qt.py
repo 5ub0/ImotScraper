@@ -1141,7 +1141,7 @@ def _bin_series(dates: list, values: list, bin_by: str = "auto") -> tuple[list, 
     span_days = (dates[-1] - dates[0]).days if len(dates) > 1 else 0
 
     if bin_by == "auto":
-        if len(dates) <= 90:
+        if span_days <= 90:
             bin_by = "day"
         elif span_days <= 365:
             bin_by = "week"
