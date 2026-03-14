@@ -533,15 +533,17 @@ class DatabaseManager:
         error_message: Optional[str] = None,
         avg_price_per_sqm: Optional[float] = None,
         active_count: Optional[int] = None,
+        search_id: Optional[int] = None,
     ):
-        """Persist one summary row for an entire scrape execution."""
+        """Persist one summary row for a scrape execution (one row per search)."""
         with self._get_connection() as conn:
             conn.execute("""
                 INSERT INTO scrape_runs
-                    (searches, search_name, run_date, records_found, new_records, changed_prices,
-                     inactive_count, success, error_message, avg_price_per_sqm, active_count)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """, (searches, searches, self._local_now(), records_found, new_records,
+                    (searches, search_name, search_id, run_date, records_found, new_records,
+                     changed_prices, inactive_count, success, error_message,
+                     avg_price_per_sqm, active_count)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """, (searches, searches, search_id, self._local_now(), records_found, new_records,
                   changed_prices, inactive_count, 1 if success else 0, error_message,
                   avg_price_per_sqm, active_count))
 

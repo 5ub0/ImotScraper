@@ -48,43 +48,16 @@ class ImotScraper:
 
             session = self._create_session()
 
-            total_found     = 0
-            total_new       = 0
-            total_changed   = 0
-            total_inactive  = 0
             all_success     = True
             all_errors: list[str] = []
-            search_names: list[str] = []
-            all_sqm_values: list[float] = []
-            total_active    = 0
 
             for search in searches:
                 self.logger.info(f"Processing: {search['search_name']}")
                 result = self._scrape_search(session, search["url"], search["search_name"], search["id"])
-                search_names.append(search["search_name"])
-                total_found    += result["records_found"]
-                total_new      += result["new_records"]
-                total_changed  += result["changed_prices"]
-                total_inactive += result["inactive_count"]
-                total_active   += result["active_count"]
-                all_sqm_values.extend(result["sqm_values"])
                 if not result["success"]:
                     all_success = False
                     if result["error_message"]:
                         all_errors.append(f"{search['search_name']}: {result['error_message']}")
-
-            avg_sqm = round(sum(all_sqm_values) / len(all_sqm_values), 2) if all_sqm_values else None
-            self.db.log_scrape_run(
-                searches=", ".join(search_names),
-                records_found=total_found,
-                new_records=total_new,
-                changed_prices=total_changed,
-                inactive_count=total_inactive,
-                success=all_success,
-                error_message=" | ".join(all_errors) if all_errors else None,
-                avg_price_per_sqm=avg_sqm,
-                active_count=total_active,
-            )
 
             return all_success
 
@@ -226,6 +199,19 @@ class ImotScraper:
                 f"{new_count} new, {changed_count} changed, {inactive_count} inactive."
             )
 
+            avg_sqm = round(sum(sqm_values) / len(sqm_values), 2) if sqm_values else None
+            self.db.log_scrape_run(
+                searches=search_name,
+                records_found=records_found,
+                new_records=new_count,
+                changed_prices=changed_count,
+                inactive_count=inactive_count,
+                success=True,
+                avg_price_per_sqm=avg_sqm,
+                active_count=active_count,
+                search_id=search_id,
+            )
+
             return {
                 "records_found":  records_found,
                 "new_records":    new_count,
@@ -239,6 +225,18 @@ class ImotScraper:
 
         except Exception as e:
             self.logger.error(f"Error scraping '{search_name}': {e}")
+            self.db.log_scrape_run(
+                searches=search_name,
+                records_found=records_found,
+                new_records=new_count,
+                changed_prices=changed_count,
+                inactive_count=0,
+                success=False,
+                error_message=str(e),
+                avg_price_per_sqm=None,
+                active_count=0,
+                search_id=search_id,
+            )
             return {
                 "records_found":  records_found,
                 "new_records":    new_count,
