@@ -77,13 +77,20 @@ def main():
         _original_execute = scheduler.scraper_function
 
         def _gui_aware_execute() -> bool:
-            win._scrape_starting.emit()           # clear feed (cross-thread safe)
+            # 1. Ask the main thread to close any open modals and clear the feed.
+            #    _sched_prepare is a normal QueuedConnection signal — Qt processes it
+            #    even inside a nested modal event loop, so it always gets through.
+            win._sched_ready.clear()
+            win._sched_prepare.emit()
+            # 2. Wait (in this background thread) until _on_sched_prepare has finished
+            #    on the main thread and set the event.  5 s timeout is a safety net.
+            win._sched_ready.wait(timeout=5)
             try:
                 success = _original_execute()
             except Exception as exc:
                 logging.error(f"Critical error during scheduled run: {exc}")
                 success = False
-            win._scrape_finished.emit(success)     # reset status label
+            win._scrape_finished.emit(success)     # reset status label (queued, non-blocking)
             return success
 
         scheduler.scraper_function = _gui_aware_execute

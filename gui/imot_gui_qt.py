@@ -1484,10 +1484,12 @@ class ImotScraperMainWindow(QMainWindow):
     # Emitted from the scraper thread to update the status bar safely
     _scrape_finished  = pyqtSignal(bool)   # success flag
     _scrape_starting  = pyqtSignal()       # clear feed + set status before scheduled runs
+    _sched_prepare    = pyqtSignal()       # close any open modals, then clear feed
 
     def __init__(self, controller=None) -> None:
         super().__init__()
         self.controller = controller
+        self._sched_ready = threading.Event()   # set by _on_sched_prepare once UI is ready
         self.setWindowTitle("Imot.bg Scraper")
         self.resize(800, 860)
         self.setMinimumSize(700, 600)
@@ -1512,6 +1514,7 @@ class ImotScraperMainWindow(QMainWindow):
 
         self._scrape_finished.connect(self._on_scrape_finished)
         self._scrape_starting.connect(self._on_scrape_starting)
+        self._sched_prepare.connect(self._on_sched_prepare)
 
         self._build_ui()
         self._load_searches()
@@ -1977,6 +1980,23 @@ class ImotScraperMainWindow(QMainWindow):
         self._status_lbl.setText("  ⏳  Starting scrape…")
         self._status_lbl.setStyleSheet(f"color: {T.YELLOW}; font-size: 12px;")
         self._status_counts_lbl.setText("")
+
+    def _on_sched_prepare(self) -> None:
+        """Slot — runs on main thread when the scheduler is about to fire.
+        Closes any open modal dialogs so the main event loop is unblocked,
+        then calls _on_scrape_starting to clear the feed, and finally sets
+        _sched_ready so the scheduler thread can proceed."""
+        # Close every active modal (ResultsWindow, GalleryWindow, chart dialogs…)
+        app = QApplication.instance()
+        if app:
+            for widget in app.topLevelWidgets():
+                if widget is not self and widget.isVisible():
+                    try:
+                        widget.close()
+                    except Exception:
+                        pass
+        self._on_scrape_starting()
+        self._sched_ready.set()   # unblock the waiting scheduler thread
 
     def _on_search_progress(self, search_name: str) -> None:
         """Update status label with the currently running search name."""
