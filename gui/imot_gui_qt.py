@@ -1249,9 +1249,23 @@ class AreaAvgChartDialog(QDialog):
             if controller and search_id is not None:
                 db = controller.db
                 if db:
-                    active_props = db.get_properties(search_id, status="Active")
+                    # Fetch all properties and explicitly filter to currently Active
+                    # so we do not show dots for inactive listings.
+                    all_props = db.get_properties(search_id, status=None)
                     fallback_x = dates[-1]
-                    for p in active_props:
+                    for p in all_props:
+                        # Only show currently active properties
+                        if p.get("status") != "Active":
+                            continue
+
+                        # Parse first_seen if present — use it for the x coordinate
+                        # but do not exclude properties based on first_seen.
+                        fs = p.get("first_seen")
+                        try:
+                            first_seen_dt = datetime.strptime(fs[:16], "%Y-%m-%d %H:%M") if fs else None
+                        except Exception:
+                            first_seen_dt = None
+
                         raw = p.get("price_per_sqm")
                         if not raw or raw == "—":
                             continue
@@ -1259,13 +1273,11 @@ class AreaAvgChartDialog(QDialog):
                             val = float(raw.split()[0].replace(",", "."))
                         except (ValueError, IndexError):
                             continue
-                        dot_x = fallback_x
-                        fs = p.get("first_seen")
-                        if fs:
-                            try:
-                                dot_x = datetime.strptime(fs[:16], "%Y-%m-%d %H:%M")
-                            except ValueError:
-                                pass
+
+                        # Place the dot at the property's current €/m² value. Use
+                        # first_seen if available, otherwise place at the latest avg
+                        # point on the x-axis (fallback).
+                        dot_x = first_seen_dt or fallback_x
                         ph = db.get_price_history(p["id"])
                         p["current_price"] = next(
                             (r["price"] for r in ph if r["price_status"] == "Current"), "—"
